@@ -16,12 +16,15 @@ import com.bbs.reader.ui.board.BoardViewModel
 import com.bbs.reader.ui.detail.DetailScreen
 import com.bbs.reader.ui.detail.DetailViewModel
 import com.bbs.reader.ui.home.HomeScreen
+import com.bbs.reader.ui.settings.SettingsScreen
+import com.bbs.reader.ui.settings.SettingsViewModel
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 object Routes {
     const val HOME = "home"
+    const val SETTINGS = "settings"
     const val BOARD = "board/{boardId}"
     const val DETAIL = "detail/{mid}/{postId}"
 
@@ -39,6 +42,7 @@ fun AppNav() {
     val app = LocalContext.current.applicationContext as BbsApp
     val repository = remember { app.boardRepository }
     val readHistory = remember { app.readHistoryStore }
+    val settingsStore = remember { app.settingsStore }
 
     NavHost(navController = navController, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
@@ -47,7 +51,18 @@ fun AppNav() {
                     val firstBoard = community.boards.firstOrNull()?.id
                         ?: CommunityCatalog.DDANZI_HOT
                     navController.navigate(Routes.board(firstBoard))
-                }
+                },
+                onSettingsClick = { navController.navigate(Routes.SETTINGS) }
+            )
+        }
+
+        composable(Routes.SETTINGS) {
+            val vm: SettingsViewModel = viewModel(
+                factory = SettingsViewModel.factory(settingsStore)
+            )
+            SettingsScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() }
             )
         }
 
@@ -63,6 +78,7 @@ fun AppNav() {
             BoardScreen(
                 viewModel = vm,
                 boardId = boardId,
+                settingsStore = settingsStore,
                 onBack = { navController.popBackStack() },
                 onBoardChange = { newBoardId ->
                     navController.navigate(Routes.board(newBoardId)) {
@@ -97,6 +113,7 @@ fun AppNav() {
             )
             DetailScreen(
                 viewModel = vm,
+                settingsStore = settingsStore,
                 onBack = { navController.popBackStack() }
             )
         }

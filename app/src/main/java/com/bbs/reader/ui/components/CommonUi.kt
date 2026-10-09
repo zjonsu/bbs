@@ -1,6 +1,8 @@
 package com.bbs.reader.ui.components
 
-import android.util.Base64
+import android.content.Intent
+import android.net.Uri
+import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -19,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.bbs.reader.data.model.AppSettings
+import com.bbs.reader.ui.reader.toReaderCss
 
 @Composable
 fun LoadingView(modifier: Modifier = Modifier) {
@@ -51,18 +55,17 @@ fun ErrorView(
 @Composable
 fun HtmlContent(
     html: String,
-    darkTheme: Boolean,
+    appSettings: AppSettings,
     modifier: Modifier = Modifier,
     enablePinchZoom: Boolean = false
 ) {
-    val bg = if (darkTheme) "#121212" else "#FFFFFF"
-    val fg = if (darkTheme) "#ECECEC" else "#1B1B1B"
+    val css = remember(appSettings) { appSettings.toReaderCss() }
     val meta = if (enablePinchZoom) {
         """<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, user-scalable=yes"/>"""
     } else {
         """<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>"""
     }
-    val wrapped = remember(html, darkTheme, enablePinchZoom) {
+    val wrapped = remember(html, css, enablePinchZoom) {
         """
         <!DOCTYPE html>
         <html>
@@ -70,22 +73,7 @@ fun HtmlContent(
           <meta charset="utf-8"/>
           $meta
           <style>
-            body {
-              margin: 0;
-              padding: 0;
-              font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans KR', sans-serif;
-              font-size: 16px;
-              line-height: 1.65;
-              color: $fg;
-              background: $bg;
-              word-break: break-word;
-            }
-            img, video, iframe {
-              max-width: 100% !important;
-              height: auto !important;
-            }
-            a { color: #C62828; }
-            p { margin: 0.6em 0; }
+            $css
           </style>
         </head>
         <body>$html</body>
@@ -97,7 +85,42 @@ fun HtmlContent(
         modifier = modifier.fillMaxWidth(),
         factory = { context ->
             WebView(context).apply {
-                webViewClient = WebViewClient()
+                webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView,
+                        request: WebResourceRequest
+                    ): Boolean {
+                        return openExternalUrl(view, request.url?.toString())
+                    }
+
+                    @Deprecated("Deprecated in Java")
+                    override fun shouldOverrideUrlLoading(view: WebView, url: String?): Boolean {
+                        return openExternalUrl(view, url)
+                    }
+
+                    private fun openExternalUrl(view: WebView, url: String?): Boolean {
+                        if (url.isNullOrBlank()) return true
+                        // 초기 loadData / about:blank 등은 WebView 내부 처리
+                        if (url.startsWith("data:", ignoreCase = true) ||
+                            url.startsWith("about:", ignoreCase = true) ||
+                            url.startsWith("file:", ignoreCase = true)
+                        ) {
+                            return false
+                        }
+                        if (url.startsWith("http://", ignoreCase = true) ||
+                            url.startsWith("https://", ignoreCase = true)
+                        ) {
+                            runCatching {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                view.context.startActivity(intent)
+                            }
+                            return true
+                        }
+                        return true
+                    }
+                }
                 settings.javaScriptEnabled = false
                 settings.loadsImagesAutomatically = true
                 settings.domStorageEnabled = false
@@ -117,8 +140,14 @@ fun HtmlContent(
             }
         },
         update = { webView ->
-            val encoded = Base64.encodeToString(wrapped.toByteArray(Charsets.UTF_8), Base64.NO_PADDING)
-            webView.loadData(encoded, "text/html; charset=utf-8", "base64")
+            // assets 폰트(@font-face) 로드를 위해 baseURL 사용
+            webView.loadDataWithBaseURL(
+                "file:///android_asset/",
+                wrapped,
+                "text/html",
+                "utf-8",
+                null
+            )
         }
     )
 }

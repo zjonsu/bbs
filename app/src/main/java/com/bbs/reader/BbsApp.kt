@@ -2,6 +2,7 @@ package com.bbs.reader
 
 import android.app.Application
 import com.bbs.reader.data.local.ReadHistoryStore
+import com.bbs.reader.data.local.SettingsStore
 import com.bbs.reader.data.repository.BoardRepository
 
 class BbsApp : Application() {
@@ -9,10 +10,13 @@ class BbsApp : Application() {
         private set
     lateinit var readHistoryStore: ReadHistoryStore
         private set
+    lateinit var settingsStore: SettingsStore
+        private set
 
     override fun onCreate() {
         super.onCreate()
         boardRepository = BoardRepository()
         readHistoryStore = ReadHistoryStore(this)
+        settingsStore = SettingsStore(this)
     }
 }
