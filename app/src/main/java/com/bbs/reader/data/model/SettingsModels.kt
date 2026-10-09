@@ -118,7 +118,6 @@ enum class ReaderBackground(val label: String, val hex: String, val night: Boole
 
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val hideReadPosts: Boolean = false,
     val fontFamily: FontOption = FontOption.ORIGINAL,
     val fontWeight: FontWeightOption = FontWeightOption.REGULAR,
     val baseFontSizeSp: Float = 18f,

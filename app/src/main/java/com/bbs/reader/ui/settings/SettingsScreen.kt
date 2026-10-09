@@ -37,7 +37,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -150,25 +149,6 @@ fun SettingsScreen(
                         }
                     )
                 }
-            }
-
-            Spacer(Modifier.height(14.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("읽은 글 숨기기", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "리스트에서 읽은 글 제외",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
-                }
-                Switch(
-                    checked = draft.hideReadPosts,
-                    onCheckedChange = { apply(draft.copy(hideReadPosts = it)) }
-                )
             }
 
             Spacer(Modifier.height(14.dp))

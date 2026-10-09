@@ -16,6 +16,7 @@ import com.bbs.reader.ui.board.BoardViewModel
 import com.bbs.reader.ui.detail.DetailScreen
 import com.bbs.reader.ui.detail.DetailViewModel
 import com.bbs.reader.ui.home.HomeScreen
+import com.bbs.reader.ui.settings.BoardManageScreen
 import com.bbs.reader.ui.settings.SettingsScreen
 import com.bbs.reader.ui.settings.SettingsViewModel
 import java.net.URLDecoder
@@ -25,6 +26,7 @@ import java.nio.charset.StandardCharsets
 object Routes {
     const val HOME = "home"
     const val SETTINGS = "settings"
+    const val BOARD_MANAGE = "board_manage"
     const val BOARD = "board/{boardId}"
     const val DETAIL = "detail/{mid}/{postId}"
 
@@ -43,24 +45,38 @@ fun AppNav() {
     val repository = remember { app.boardRepository }
     val readHistory = remember { app.readHistoryStore }
     val settingsStore = remember { app.settingsStore }
+    val boardPrefsStore = remember { app.boardPrefsStore }
+    val homePrefsStore = remember { app.homePrefsStore }
 
     NavHost(navController = navController, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
             HomeScreen(
+                homePrefsStore = homePrefsStore,
                 onCommunityClick = { community ->
                     val firstBoard = community.boards.firstOrNull()?.id
                         ?: CommunityCatalog.DDANZI_HOT
                     navController.navigate(Routes.board(firstBoard))
                 },
-                onSettingsClick = { navController.navigate(Routes.SETTINGS) }
+                onSettingsClick = { navController.navigate(Routes.SETTINGS) },
+                onBoardManageClick = { navController.navigate(Routes.BOARD_MANAGE) }
             )
         }
 
         composable(Routes.SETTINGS) {
             val vm: SettingsViewModel = viewModel(
-                factory = SettingsViewModel.factory(settingsStore)
+                factory = SettingsViewModel.factory(settingsStore, homePrefsStore)
             )
             SettingsScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.BOARD_MANAGE) {
+            val vm: SettingsViewModel = viewModel(
+                factory = SettingsViewModel.factory(settingsStore, homePrefsStore)
+            )
+            BoardManageScreen(
                 viewModel = vm,
                 onBack = { navController.popBackStack() }
             )
@@ -79,6 +95,7 @@ fun AppNav() {
                 viewModel = vm,
                 boardId = boardId,
                 settingsStore = settingsStore,
+                boardPrefsStore = boardPrefsStore,
                 onBack = { navController.popBackStack() },
                 onBoardChange = { newBoardId ->
                     navController.navigate(Routes.board(newBoardId)) {

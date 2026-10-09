@@ -5,15 +5,22 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -21,13 +28,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +46,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bbs.reader.data.local.BoardPrefsStore
 import com.bbs.reader.data.local.SettingsStore
 import com.bbs.reader.data.model.AppSettings
 import com.bbs.reader.data.model.PostSummary
@@ -46,6 +55,7 @@ import com.bbs.reader.data.repository.CommunityCatalog
 import com.bbs.reader.ui.components.ErrorView
 import com.bbs.reader.ui.components.LoadingView
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +63,7 @@ fun BoardScreen(
     viewModel: BoardViewModel,
     boardId: String,
     settingsStore: SettingsStore,
+    boardPrefsStore: BoardPrefsStore,
     onBack: () -> Unit,
     onBoardChange: (String) -> Unit = {},
     onPostClick: (PostSummary) -> Unit
@@ -60,6 +71,9 @@ fun BoardScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val readIds by viewModel.readIds.collectAsStateWithLifecycle()
     val settings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = AppSettings())
+    val hideRead by boardPrefsStore.hideReadFor(boardId)
+        .collectAsStateWithLifecycle(initialValue = false)
+    val scope = rememberCoroutineScope()
     val board = CommunityCatalog.findBoard(boardId)
     val community = board?.let { CommunityCatalog.findCommunity(it.communityId) }
     val boards = community?.boards.orEmpty()
@@ -68,32 +82,75 @@ fun BoardScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = community?.name ?: "게시판",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = board?.name.orEmpty(),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .height(48.dp)
+                        .padding(end = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "뒤로",
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
+                    val titleText = buildString {
+                        append(community?.name ?: "게시판")
+                        val boardName = board?.name.orEmpty()
+                        if (boardName.isNotBlank()) append("[$boardName]")
                     }
-                },
-                actions = {
-                    IconButton(onClick = viewModel::refresh) {
-                        Icon(Icons.Default.Refresh, contentDescription = "새로고침")
+                    Text(
+                        text = titleText,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 4.dp)
+                    )
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                boardPrefsStore.setHideRead(boardId, !hideRead)
+                            }
+                        },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (hideRead) {
+                                Icons.Filled.VisibilityOff
+                            } else {
+                                Icons.Filled.Visibility
+                            },
+                            contentDescription = if (hideRead) "읽은 글 숨김 해제" else "읽은 글 숨기기",
+                            tint = if (hideRead) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = viewModel::refresh,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "새로고침",
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
-            )
+            }
         }
     ) { padding ->
         Column(
@@ -111,7 +168,12 @@ fun BoardScreen(
                         Tab(
                             selected = index == selectedIndex,
                             onClick = { if (info.id != boardId) onBoardChange(info.id) },
-                            text = { Text(info.name) }
+                            text = {
+                                Text(
+                                    text = info.name,
+                                    fontSize = 13.sp
+                                )
+                            }
                         )
                     }
                 }
@@ -138,7 +200,7 @@ fun BoardScreen(
                         onRefresh = viewModel::refresh,
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        val visiblePosts = if (settings.hideReadPosts) {
+                        val visiblePosts = if (hideRead) {
                             ui.data.posts.filterNot { readIds.contains(it.id) }
                         } else {
                             ui.data.posts

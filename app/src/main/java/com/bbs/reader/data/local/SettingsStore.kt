@@ -38,7 +38,6 @@ class SettingsStore(private val context: Context) {
     private fun encode(s: AppSettings): String =
         JSONObject()
             .put("themeMode", s.themeMode.name)
-            .put("hideReadPosts", s.hideReadPosts)
             .put("fontFamily", s.fontFamily.name)
             .put("fontWeight", s.fontWeight.name)
             .put("baseFontSizeSp", s.baseFontSizeSp.toDouble())
@@ -62,7 +61,6 @@ class SettingsStore(private val context: Context) {
             )
             AppSettings(
                 themeMode = ThemeMode.fromStored(o.optString("themeMode", ThemeMode.SYSTEM.name)),
-                hideReadPosts = o.optBoolean("hideReadPosts", false),
                 fontFamily = family,
                 fontWeight = family.coerceWeight(weight),
                 baseFontSizeSp = o.optDouble("baseFontSizeSp", 18.0).toFloat(),

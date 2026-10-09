@@ -2,6 +2,7 @@ package com.bbs.reader.ui.home
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,8 +16,11 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,22 +29,55 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bbs.reader.data.local.HomePrefsStore
 import com.bbs.reader.data.model.Community
 import com.bbs.reader.data.repository.CommunityCatalog
+import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
 fun HomeScreen(
+    homePrefsStore: HomePrefsStore,
     onCommunityClick: (Community) -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onBoardManageClick: () -> Unit
 ) {
+    val savedVisible by homePrefsStore.visibleCommunities
+        .collectAsStateWithLifecycle(initialValue = CommunityCatalog.communities)
+    var communities by remember { mutableStateOf(savedVisible) }
+    LaunchedEffect(savedVisible) {
+        communities = savedVisible
+    }
+
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
+        communities = communities.toMutableList().apply {
+            add(to.index, removeAt(from.index))
+        }
+        scope.launch {
+            homePrefsStore.setOrderFromVisible(communities.map { it.id })
+        }
+    }
+
     Scaffold(
         topBar = {
-            // 기본 TopAppBar(~64dp) 대비 약 20% 축소한 컴팩트 헤더
             Surface(color = MaterialTheme.colorScheme.surface) {
                 Row(
                     modifier = Modifier
@@ -71,18 +108,70 @@ fun HomeScreen(
             }
         }
     ) { padding ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(vertical = 8.dp)
+                .padding(padding)
         ) {
-            items(CommunityCatalog.communities, key = { it.id }) { community ->
-                CommunityRow(
-                    community = community,
-                    onClick = { onCommunityClick(community) }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 72.dp)
+            ) {
+                if (communities.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 40.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "표시할 게시판이 없습니다",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "하단 아이콘에서 게시판을 활성화해 주세요",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                        }
+                    }
+                } else {
+                    items(communities, key = { it.id }) { community ->
+                        ReorderableItem(reorderableState, key = community.id) {
+                            CommunityRow(
+                                community = community,
+                                modifier = Modifier.longPressDraggableHandle(
+                                    onDragStarted = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    }
+                                ),
+                                onClick = { onCommunityClick(community) }
+                            )
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            IconButton(
+                onClick = onBoardManageClick,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 12.dp)
+                    .size(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Tune,
+                    contentDescription = "게시판 설정",
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    modifier = Modifier.size(26.dp)
                 )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
             }
         }
     }
@@ -91,24 +180,36 @@ fun HomeScreen(
 @Composable
 private fun CommunityRow(
     community: Community,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
+    Row(
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+            .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = community.name,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Medium
-        )
-        Text(
-            text = community.description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = community.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = community.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+        Icon(
+            imageVector = Icons.Default.DragHandle,
+            contentDescription = "길게 눌러 순서 변경",
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+            modifier = Modifier.size(22.dp)
         )
     }
 }
