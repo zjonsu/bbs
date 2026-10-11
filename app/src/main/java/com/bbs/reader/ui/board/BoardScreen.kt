@@ -31,6 +31,7 @@ import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +55,7 @@ import com.bbs.reader.data.model.UiState
 import com.bbs.reader.data.repository.CommunityCatalog
 import com.bbs.reader.ui.components.ErrorView
 import com.bbs.reader.ui.components.LoadingView
+import com.bbs.reader.ui.components.LoginRequiredView
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -66,7 +68,8 @@ fun BoardScreen(
     boardPrefsStore: BoardPrefsStore,
     onBack: () -> Unit,
     onBoardChange: (String) -> Unit = {},
-    onPostClick: (PostSummary) -> Unit
+    onPostClick: (PostSummary) -> Unit,
+    onLoginClick: (communityId: String) -> Unit = {}
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val readIds by viewModel.readIds.collectAsStateWithLifecycle()
@@ -139,6 +142,15 @@ fun BoardScreen(
                             modifier = Modifier.size(20.dp)
                         )
                     }
+                    val siteAuth = community?.let { CommunityCatalog.findSiteAuth(it.id) }
+                    if (siteAuth != null) {
+                        TextButton(
+                            onClick = { onLoginClick(siteAuth.communityId) },
+                            modifier = Modifier.height(40.dp)
+                        ) {
+                            Text("로그인", fontSize = 13.sp)
+                        }
+                    }
                     IconButton(
                         onClick = viewModel::refresh,
                         modifier = Modifier.size(40.dp)
@@ -183,6 +195,12 @@ fun BoardScreen(
             when (val ui = state) {
                 UiState.Loading -> LoadingView()
                 is UiState.Error -> ErrorView(ui.message, onRetry = viewModel::refresh)
+                is UiState.LoginRequired -> LoginRequiredView(
+                    siteName = ui.siteName,
+                    message = ui.message,
+                    onLogin = { onLoginClick(ui.communityId) },
+                    onRetry = viewModel::refresh
+                )
                 is UiState.Success -> {
                     val listState = rememberLazyListState()
                     LaunchedEffect(listState) {

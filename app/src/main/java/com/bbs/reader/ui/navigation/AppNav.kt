@@ -1,8 +1,11 @@
 package com.bbs.reader.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -11,6 +14,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.bbs.reader.BbsApp
 import com.bbs.reader.data.repository.CommunityCatalog
+import com.bbs.reader.ui.auth.SiteLoginScreen
 import com.bbs.reader.ui.board.BoardScreen
 import com.bbs.reader.ui.board.BoardViewModel
 import com.bbs.reader.ui.detail.DetailScreen
@@ -29,6 +33,7 @@ object Routes {
     const val BOARD_MANAGE = "board_manage"
     const val BOARD = "board/{boardId}"
     const val DETAIL = "detail/{mid}/{postId}"
+    const val SITE_LOGIN = "site_login/{communityId}"
 
     fun board(boardId: String) = "board/$boardId"
     fun detail(mid: String, postId: String): String {
@@ -36,6 +41,8 @@ object Routes {
         val encodedPostId = URLEncoder.encode(postId, StandardCharsets.UTF_8.toString())
         return "detail/$encodedMid/$encodedPostId"
     }
+
+    fun siteLogin(communityId: String) = "site_login/$communityId"
 }
 
 @Composable
@@ -47,6 +54,7 @@ fun AppNav() {
     val settingsStore = remember { app.settingsStore }
     val boardPrefsStore = remember { app.boardPrefsStore }
     val homePrefsStore = remember { app.homePrefsStore }
+    val siteSessionStore = remember { app.siteSessionStore }
 
     NavHost(navController = navController, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
@@ -78,7 +86,11 @@ fun AppNav() {
             )
             BoardManageScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() }
+                siteSessionStore = siteSessionStore,
+                onBack = { navController.popBackStack() },
+                onSiteLogin = { communityId ->
+                    navController.navigate(Routes.siteLogin(communityId))
+                }
             )
         }
 
@@ -91,6 +103,15 @@ fun AppNav() {
                 key = boardId,
                 factory = BoardViewModel.factory(boardId, repository, readHistory)
             )
+            val loginOk by entry.savedStateHandle
+                .getStateFlow("site_login_ok", false)
+                .collectAsStateWithLifecycle()
+            LaunchedEffect(loginOk) {
+                if (loginOk) {
+                    entry.savedStateHandle["site_login_ok"] = false
+                    vm.refresh()
+                }
+            }
             BoardScreen(
                 viewModel = vm,
                 boardId = boardId,
@@ -105,6 +126,9 @@ fun AppNav() {
                 },
                 onPostClick = { post ->
                     navController.navigate(Routes.detail(post.mid, post.id))
+                },
+                onLoginClick = { communityId ->
+                    navController.navigate(Routes.siteLogin(communityId))
                 }
             )
         }
@@ -128,10 +152,40 @@ fun AppNav() {
                 key = "$mid-$postId",
                 factory = DetailViewModel.factory(mid, postId, repository, readHistory)
             )
+            val loginOk by entry.savedStateHandle
+                .getStateFlow("site_login_ok", false)
+                .collectAsStateWithLifecycle()
+            LaunchedEffect(loginOk) {
+                if (loginOk) {
+                    entry.savedStateHandle["site_login_ok"] = false
+                    vm.load()
+                }
+            }
             DetailScreen(
                 viewModel = vm,
                 settingsStore = settingsStore,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onLoginClick = { communityId ->
+                    navController.navigate(Routes.siteLogin(communityId))
+                }
+            )
+        }
+
+        composable(
+            route = Routes.SITE_LOGIN,
+            arguments = listOf(navArgument("communityId") { type = NavType.StringType })
+        ) { entry ->
+            val communityId = entry.arguments?.getString("communityId").orEmpty()
+            SiteLoginScreen(
+                communityId = communityId,
+                siteSessionStore = siteSessionStore,
+                onBack = { navController.popBackStack() },
+                onLoginSuccess = {
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("site_login_ok", true)
+                    navController.popBackStack()
+                }
             )
         }
     }

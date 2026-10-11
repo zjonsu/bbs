@@ -17,9 +17,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -27,14 +29,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bbs.reader.data.local.ManagedCommunity
+import com.bbs.reader.data.local.SiteSessionStore
+import com.bbs.reader.data.model.SiteAuthInfo
+import com.bbs.reader.data.repository.CommunityCatalog
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BoardManageScreen(
     viewModel: SettingsViewModel,
-    onBack: () -> Unit
+    siteSessionStore: SiteSessionStore,
+    onBack: () -> Unit,
+    onSiteLogin: (communityId: String) -> Unit = {}
 ) {
     val managedCommunities by viewModel.managedCommunities.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -84,6 +93,31 @@ fun BoardManageScreen(
                     )
                 }
             }
+
+            if (CommunityCatalog.siteAuthList.isNotEmpty()) {
+                Text(
+                    text = "사이트 로그인",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 24.dp, bottom = 4.dp)
+                )
+                Text(
+                    text = "성인게시판 등 로그인이 필요한 게시판을 보려면 사이트에 로그인하세요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                CommunityCatalog.siteAuthList.forEach { auth ->
+                    SiteAuthRow(
+                        auth = auth,
+                        siteSessionStore = siteSessionStore,
+                        onLogin = { onSiteLogin(auth.communityId) },
+                        onLogout = {
+                            scope.launch { siteSessionStore.clear(auth.communityId) }
+                        }
+                    )
+                }
+            }
         }
     }
 }
@@ -118,6 +152,47 @@ private fun BoardEnableRow(
             checked = item.enabled,
             onCheckedChange = onEnabledChange
         )
+    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+}
+
+@Composable
+private fun SiteAuthRow(
+    auth: SiteAuthInfo,
+    siteSessionStore: SiteSessionStore,
+    onLogin: () -> Unit,
+    onLogout: () -> Unit
+) {
+    val loggedIn by siteSessionStore.isLoggedIn(auth.communityId)
+        .collectAsStateWithLifecycle(initialValue = false)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = auth.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = if (loggedIn) "로그인됨" else "로그인 필요",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        if (loggedIn) {
+            TextButton(onClick = onLogout) {
+                Text("로그아웃")
+            }
+        }
+        TextButton(onClick = onLogin) {
+            Text(if (loggedIn) "다시 로그인" else "로그인")
+        }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
 }

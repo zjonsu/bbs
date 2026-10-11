@@ -53,6 +53,38 @@ fun ErrorView(
 }
 
 @Composable
+fun LoginRequiredView(
+    siteName: String,
+    message: String,
+    onLogin: () -> Unit,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = siteName,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+            )
+            Button(onClick = onLogin, modifier = Modifier.padding(top = 8.dp)) {
+                Text("로그인")
+            }
+            Button(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) {
+                Text("다시 시도")
+            }
+        }
+    }
+}
+
+@Composable
 fun HtmlContent(
     html: String,
     appSettings: AppSettings,
@@ -90,6 +122,8 @@ fun HtmlContent(
                         view: WebView,
                         request: WebResourceRequest
                     ): Boolean {
+                        // iframe(유튜브 등) 내부 로드는 WebView가 처리
+                        if (!request.isForMainFrame) return false
                         return openExternalUrl(view, request.url?.toString())
                     }
 
@@ -121,10 +155,13 @@ fun HtmlContent(
                         return true
                     }
                 }
-                settings.javaScriptEnabled = false
+                // 유튜브/비메오 임베드 재생에 필요. 본문 script는 prepareContentHtml 에서 제거됨
+                settings.javaScriptEnabled = true
                 settings.loadsImagesAutomatically = true
-                settings.domStorageEnabled = false
+                settings.domStorageEnabled = true
+                settings.mediaPlaybackRequiresUserGesture = true
                 settings.cacheMode = WebSettings.LOAD_DEFAULT
+                settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 if (enablePinchZoom) {
                     settings.setSupportZoom(true)
                     settings.builtInZoomControls = true

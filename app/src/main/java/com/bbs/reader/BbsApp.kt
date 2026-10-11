@@ -5,9 +5,16 @@ import com.bbs.reader.data.local.BoardPrefsStore
 import com.bbs.reader.data.local.HomePrefsStore
 import com.bbs.reader.data.local.ReadHistoryStore
 import com.bbs.reader.data.local.SettingsStore
+import com.bbs.reader.data.local.SiteSessionStore
 import com.bbs.reader.data.repository.BoardRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class BbsApp : Application() {
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     lateinit var boardRepository: BoardRepository
         private set
     lateinit var readHistoryStore: ReadHistoryStore
@@ -18,6 +25,8 @@ class BbsApp : Application() {
         private set
     lateinit var homePrefsStore: HomePrefsStore
         private set
+    lateinit var siteSessionStore: SiteSessionStore
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -26,5 +35,9 @@ class BbsApp : Application() {
         settingsStore = SettingsStore(this)
         boardPrefsStore = BoardPrefsStore(this)
         homePrefsStore = HomePrefsStore(this)
+        siteSessionStore = SiteSessionStore(this)
+        appScope.launch {
+            runCatching { siteSessionStore.applyPersistedCookies() }
+        }
     }
 }

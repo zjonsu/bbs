@@ -18,13 +18,15 @@ import com.bbs.reader.data.model.UiState
 import com.bbs.reader.ui.components.ErrorView
 import com.bbs.reader.ui.components.HtmlContent
 import com.bbs.reader.ui.components.LoadingView
+import com.bbs.reader.ui.components.LoginRequiredView
 import com.bbs.reader.ui.reader.isReaderDark
 
 @Composable
 fun DetailScreen(
     viewModel: DetailViewModel,
     settingsStore: SettingsStore,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onLoginClick: (communityId: String) -> Unit = {}
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val settings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = AppSettings())
@@ -35,6 +37,13 @@ fun DetailScreen(
             UiState.Loading -> LoadingView(Modifier.padding(padding))
             is UiState.Error -> ErrorView(
                 message = ui.message,
+                onRetry = viewModel::load,
+                modifier = Modifier.padding(padding)
+            )
+            is UiState.LoginRequired -> LoginRequiredView(
+                siteName = ui.siteName,
+                message = ui.message,
+                onLogin = { onLoginClick(ui.communityId) },
                 onRetry = viewModel::load,
                 modifier = Modifier.padding(padding)
             )
@@ -69,13 +78,18 @@ private fun buildDetailPageHtml(detail: PostDetail, settings: AppSettings): Stri
         detail.viewCount.takeIf { it > 0 }?.let { "조회 $it" },
         detail.voteCount.takeIf { it > 0 }?.let { "추천 $it" }
     ).joinToString(" · ")
-    val contentHtml = prepareContentHtml(detail.contentHtml, darkTheme)
+    val contentHtml = prepareContentHtml(
+        detail.contentHtml,
+        darkTheme,
+        detail.url,
+        detail.linkTitles
+    )
     val commentCount = detail.comments.size.coerceAtLeast(detail.commentCount)
     val commentsHtml = if (detail.comments.isEmpty()) {
         """<p class="$mutedClass" style="margin:0;">표시할 댓글이 없습니다.</p>"""
     } else {
         detail.comments.joinToString("\n") {
-            commentRowHtml(it, mutedClass, border, primary, darkTheme)
+            commentRowHtml(it, mutedClass, border, primary, darkTheme, detail.url, detail.linkTitles)
         }
     }
 
@@ -106,7 +120,9 @@ private fun commentRowHtml(
     mutedClass: String,
     border: String,
     primary: String,
-    darkTheme: Boolean
+    darkTheme: Boolean,
+    baseUrl: String,
+    linkTitles: Map<String, String>
 ): String {
     val indent = (comment.depth.coerceAtMost(4) * 12)
     val author = escapeHtml(comment.author.ifBlank { "익명" })
@@ -114,7 +130,7 @@ private fun commentRowHtml(
     val reply = comment.replyTo?.takeIf { it.isNotBlank() }?.let {
         """<div style="color:$primary;font-size:0.8em;margin:4px 0;">@${escapeHtml(it)}</div>"""
     }.orEmpty()
-    val body = prepareContentHtml(comment.contentHtml, darkTheme)
+    val body = prepareContentHtml(comment.contentHtml, darkTheme, baseUrl, linkTitles)
     return """
         <div style="padding:12px 0 12px ${indent}px;border-bottom:1px solid $border;">
           <div style="font-size:0.95em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">$author
