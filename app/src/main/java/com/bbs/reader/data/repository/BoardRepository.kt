@@ -6,6 +6,7 @@ import com.bbs.reader.data.model.LoginRequiredException
 import com.bbs.reader.data.model.PostDetail
 import com.bbs.reader.data.model.PostSummary
 import com.bbs.reader.data.parser.AagagParser
+import com.bbs.reader.data.parser.BobaedreamParser
 import com.bbs.reader.data.parser.DamoangParser
 import com.bbs.reader.data.parser.DdanziParser
 import com.bbs.reader.data.parser.HumorunivParser
@@ -28,6 +29,7 @@ class BoardRepository {
                 CommunityCatalog.DAMOANG_ID -> fetchDamoangPosts(board, page)
                 CommunityCatalog.HUMORUNIV_ID -> fetchHumorunivPosts(board, page)
                 CommunityCatalog.SLRCLUB_ID -> fetchSlrclubPosts(board, page)
+                CommunityCatalog.BOBAEDREAM_ID -> fetchBobaedreamPosts(board, page)
                 else -> fetchDdanziPosts(board, page)
             }
         }
@@ -39,6 +41,7 @@ class BoardRepository {
                 CommunityCatalog.isDamoangMid(mid) -> fetchDamoangDetail(mid, postId)
                 CommunityCatalog.isHumorunivMid(mid) -> fetchHumorunivDetail(mid, postId)
                 CommunityCatalog.isSlrclubMid(mid) -> fetchSlrclubDetail(mid, postId)
+                CommunityCatalog.isBobaedreamMid(mid) -> fetchBobaedreamDetail(mid, postId)
                 else -> fetchDdanziDetail(mid, postId)
             }
         }
@@ -268,6 +271,24 @@ class BoardRepository {
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    private fun fetchBobaedreamPosts(board: BoardInfo, page: Int): List<PostSummary> {
+        val code = board.listPath.trimEnd('/').substringAfterLast('/')
+        val url = BobaedreamParser.listUrl(code, page)
+        val html = HttpClient.get(url, referer = BobaedreamParser.BASE)
+        return BobaedreamParser.parsePostList(html, board.id, code)
+    }
+
+    private fun fetchBobaedreamDetail(mid: String, postId: String): PostDetail {
+        val code = BobaedreamParser.boardOfMid(mid)
+            ?: throw IllegalArgumentException("잘못된 보배드림 mid: $mid")
+        val url = BobaedreamParser.detailUrl(code, postId)
+        val html = HttpClient.get(
+            url = url,
+            referer = BobaedreamParser.listUrl(code, 1)
+        )
+        return BobaedreamParser.parsePostDetail(html, url, mid, postId)
     }
 
     companion object {

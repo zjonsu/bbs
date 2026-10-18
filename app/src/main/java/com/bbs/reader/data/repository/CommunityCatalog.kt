@@ -30,6 +30,9 @@ object CommunityCatalog {
     const val SLRCLUB_TODAY_PICTURES = "slrclub_today_pictures"
     const val SLRCLUB_AD_FREE = "slrclub_ad_free"
 
+    const val BOBAEDREAM_ID = "bobaedream"
+    const val BOBAEDREAM_BEST = "bobaedream_best"
+
     val communities: List<Community> = listOf(
         Community(
             id = DDANZI_ID,
@@ -156,6 +159,19 @@ object CommunityCatalog {
                     requiresLogin = true
                 )
             )
+        ),
+        Community(
+            id = BOBAEDREAM_ID,
+            name = "보배드림",
+            description = "베스트글",
+            boards = listOf(
+                BoardInfo(
+                    id = BOBAEDREAM_BEST,
+                    communityId = BOBAEDREAM_ID,
+                    name = "베스트",
+                    listPath = "https://m.bobaedream.co.kr/board/new_writing/best"
+                )
+            )
         )
     )
 
@@ -189,4 +205,6 @@ object CommunityCatalog {
     fun isHumorunivMid(mid: String): Boolean = mid.startsWith("humoruniv:")
 
     fun isSlrclubMid(mid: String): Boolean = mid.startsWith("slrclub:")
+
+    fun isBobaedreamMid(mid: String): Boolean = mid.startsWith("bobaedream:")
 }
