@@ -47,38 +47,71 @@ object SlrclubParser {
         val seen = mutableSetOf<String>()
 
         for (li in doc.select("ul.list > li")) {
-            val article = li.selectFirst("div.article") ?: continue
-            val a = article.selectFirst("div.subject a[href*=/v/]") ?: continue
-            val href = a.attr("href")
-            val parsed = parseDetailPath(href) ?: continue
-            val (slug, id) = parsed
-            if (!seen.add(id)) continue
-
-            val title = a.text().trim()
-            if (title.isBlank()) continue
-
-            val infoText = article.selectFirst("div.article-info")?.text().orEmpty()
-            val author = article.selectFirst("div.article-info span.lop")?.text()?.trim().orEmpty()
-            val time = extractTime(infoText, author)
-            val viewCount = extractNamedCount(infoText, viewPattern)
-            val voteCount = extractNamedCount(infoText, votePattern)
-            val commentCount = extractDigits(li.selectFirst("div.cmt2")?.text().orEmpty())
-
-            result += PostSummary(
-                id = id,
-                boardId = boardId,
-                title = title,
-                boardLabel = null,
-                author = author,
-                time = time,
-                commentCount = commentCount,
-                viewCount = viewCount,
-                voteCount = voteCount,
-                url = detailUrl(slug.ifBlank { boardSlug }, id),
-                mid = midOf(slug.ifBlank { boardSlug })
-            )
+            val post = parseListItem(li, boardId, boardSlug) ?: continue
+            if (!seen.add(post.id)) continue
+            result += post
         }
         return result
+    }
+
+    private fun parseListItem(li: Element, boardId: String, boardSlug: String): PostSummary? {
+        // 갤러리(썸네일): div.thumb + div.subject
+        val gallerySubject = li.selectFirst("div.subject a[href*=/v/]")
+        val article = li.selectFirst("div.article")
+        val a = when {
+            article != null -> article.selectFirst("div.subject a[href*=/v/]")
+            else -> gallerySubject
+        } ?: return null
+
+        val href = a.attr("href")
+        val parsed = parseDetailPath(href) ?: return null
+        val (slug, id) = parsed
+        val resolvedSlug = slug.ifBlank { boardSlug }
+
+        // 제목: subject 링크 ownText (댓글 수 span 제외)
+        val title = a.ownText().trim().ifBlank { a.text().trim() }
+        if (title.isBlank()) return null
+
+        val thumbSrc = li.selectFirst("div.thumb img[src]")?.attr("abs:src")
+            ?.takeIf { it.isNotBlank() }
+            ?: li.selectFirst("div.thumb img[src]")?.attr("src")?.let { absolutizeUrl(it) }
+
+        val infoText = article?.selectFirst("div.article-info")?.text().orEmpty()
+        val author = article?.selectFirst("div.article-info span.lop")?.text()?.trim().orEmpty()
+        val time = when {
+            article != null -> extractTime(infoText, author)
+            else -> li.selectFirst("div.date")?.text()?.trim().orEmpty()
+        }
+        val viewCount = extractNamedCount(infoText, viewPattern)
+        val voteCount = extractNamedCount(infoText, votePattern)
+        val commentCount = when {
+            article != null -> extractDigits(li.selectFirst("div.cmt2")?.text().orEmpty())
+            else -> extractDigits(li.selectFirst("div.subject span.cmt")?.text().orEmpty())
+        }
+        val boardLabel = li.selectFirst("div.category")?.text()?.trim()?.takeIf { it.isNotBlank() }
+
+        return PostSummary(
+            id = id,
+            boardId = boardId,
+            title = title,
+            boardLabel = boardLabel,
+            author = author,
+            time = time,
+            commentCount = commentCount,
+            viewCount = viewCount,
+            voteCount = voteCount,
+            url = detailUrl(resolvedSlug, id),
+            mid = midOf(resolvedSlug),
+            thumbnailUrl = thumbSrc
+        )
+    }
+
+    private fun absolutizeUrl(src: String): String? = when {
+        src.isBlank() -> null
+        src.startsWith("//") -> "https:$src"
+        src.startsWith("/") -> "$BASE$src"
+        src.startsWith("http") -> src
+        else -> src
     }
 
     fun parsePostDetail(html: String, postUrl: String, mid: String, postId: String): PostDetail {

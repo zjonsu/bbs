@@ -2,35 +2,194 @@ package com.bbs.reader.ui.detail
 
 import android.text.Html
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bbs.reader.data.local.ReadHistoryStore
 import com.bbs.reader.data.local.SettingsStore
 import com.bbs.reader.data.model.AppSettings
 import com.bbs.reader.data.model.CommentItem
 import com.bbs.reader.data.model.PostDetail
+import com.bbs.reader.data.model.PostSummary
 import com.bbs.reader.data.model.UiState
+import com.bbs.reader.data.repository.BoardRepository
+import com.bbs.reader.data.repository.PostBrowseSession
 import com.bbs.reader.ui.components.ErrorView
 import com.bbs.reader.ui.components.HtmlContent
 import com.bbs.reader.ui.components.LoadingView
 import com.bbs.reader.ui.components.LoginRequiredView
 import com.bbs.reader.ui.reader.isReaderDark
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 @Composable
 fun DetailScreen(
-    viewModel: DetailViewModel,
+    mid: String,
+    postId: String,
+    repository: BoardRepository,
+    readHistoryStore: ReadHistoryStore,
     settingsStore: SettingsStore,
+    reloadToken: Int = 0,
+    onReloadConsumed: () -> Unit = {},
     onBack: () -> Unit,
     onLoginClick: (communityId: String) -> Unit = {}
 ) {
+    BackHandler(onBack = onBack)
+
+    val browsePosts = remember(mid, postId) { PostBrowseSession.snapshot() }
+    val startIndex = remember(mid, postId, browsePosts) {
+        PostBrowseSession.indexOf(mid, postId)
+    }
+    val usePager = browsePosts.size > 1 && startIndex >= 0
+
+    if (!usePager) {
+        val vm: DetailViewModel = viewModel(
+            key = "$mid-$postId",
+            factory = DetailViewModel.factory(mid, postId, repository, readHistoryStore)
+        )
+        LaunchedEffect(reloadToken) {
+            if (reloadToken != 0) {
+                onReloadConsumed()
+                vm.load()
+            }
+        }
+        DetailScaffold(
+            viewModel = vm,
+            settingsStore = settingsStore,
+            onLoginClick = onLoginClick
+        )
+        return
+    }
+
+    val pagerState = rememberPagerState(initialPage = startIndex) { browsePosts.size }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(reloadToken, pagerState.settledPage) {
+        if (reloadToken != 0) {
+            onReloadConsumed()
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            beyondViewportPageCount = 1,
+            key = { page ->
+                val post = browsePosts[page]
+                "${post.mid}-${post.id}"
+            }
+        ) { page ->
+            val post = browsePosts[page]
+            DetailPage(
+                post = post,
+                repository = repository,
+                readHistoryStore = readHistoryStore,
+                settingsStore = settingsStore,
+                reloadToken = if (page == pagerState.settledPage) reloadToken else 0,
+                onLoginClick = onLoginClick
+            )
+        }
+
+        // WebView가 제스처를 가로챌 때를 대비한 가장자리 스와이프
+        Row(modifier = Modifier.fillMaxSize()) {
+            EdgeSwipeZone(
+                modifier = Modifier
+                    .width(36.dp)
+                    .fillMaxHeight(),
+                onSwipe = { dx ->
+                    if (dx > 56f && pagerState.currentPage > 0) {
+                        scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+                    }
+                }
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            EdgeSwipeZone(
+                modifier = Modifier
+                    .width(36.dp)
+                    .fillMaxHeight(),
+                onSwipe = { dx ->
+                    if (dx < -56f && pagerState.currentPage < browsePosts.lastIndex) {
+                        scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun EdgeSwipeZone(
+    modifier: Modifier,
+    onSwipe: (dx: Float) -> Unit
+) {
+    var totalDx by remember { mutableFloatStateOf(0f) }
+    Box(
+        modifier = modifier.pointerInput(Unit) {
+            detectHorizontalDragGestures(
+                onDragStart = { totalDx = 0f },
+                onDragEnd = {
+                    if (abs(totalDx) > 56f) onSwipe(totalDx)
+                    totalDx = 0f
+                },
+                onDragCancel = { totalDx = 0f },
+                onHorizontalDrag = { _, dragAmount -> totalDx += dragAmount }
+            )
+        }
+    )
+}
+
+@Composable
+private fun DetailPage(
+    post: PostSummary,
+    repository: BoardRepository,
+    readHistoryStore: ReadHistoryStore,
+    settingsStore: SettingsStore,
+    reloadToken: Int,
+    onLoginClick: (communityId: String) -> Unit
+) {
+    val vm: DetailViewModel = viewModel(
+        key = "${post.mid}-${post.id}",
+        factory = DetailViewModel.factory(post.mid, post.id, repository, readHistoryStore)
+    )
+    LaunchedEffect(reloadToken) {
+        if (reloadToken != 0) vm.load()
+    }
+    DetailScaffold(
+        viewModel = vm,
+        settingsStore = settingsStore,
+        onLoginClick = onLoginClick
+    )
+}
+
+@Composable
+private fun DetailScaffold(
+    viewModel: DetailViewModel,
+    settingsStore: SettingsStore,
+    onLoginClick: (communityId: String) -> Unit
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val settings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = AppSettings())
-    BackHandler(onBack = onBack)
 
     Scaffold { padding ->
         when (val ui = state) {

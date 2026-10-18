@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.bbs.reader.data.local.HomePrefsStore
+import com.bbs.reader.data.local.ManagedBoard
 import com.bbs.reader.data.local.ManagedCommunity
 import com.bbs.reader.data.local.SettingsStore
 import com.bbs.reader.data.model.AppSettings
@@ -29,6 +30,20 @@ class SettingsViewModel(
                 CommunityCatalog.communities.map { ManagedCommunity(it, enabled = true) }
             )
 
+    val disabledBoardIds: StateFlow<Set<String>> =
+        homePrefsStore.disabledBoardIds
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    fun managedBoards(communityId: String): StateFlow<List<ManagedBoard>> =
+        homePrefsStore.managedBoards(communityId)
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                CommunityCatalog.findCommunity(communityId)?.boards
+                    ?.map { ManagedBoard(it, enabled = true) }
+                    .orEmpty()
+            )
+
     fun update(transform: (AppSettings) -> AppSettings) {
         viewModelScope.launch {
             settingsStore.update(transform)
@@ -38,6 +53,12 @@ class SettingsViewModel(
     fun setCommunityEnabled(communityId: String, enabled: Boolean) {
         viewModelScope.launch {
             homePrefsStore.setEnabled(communityId, enabled)
+        }
+    }
+
+    fun setBoardEnabled(boardId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            homePrefsStore.setBoardEnabled(boardId, enabled)
         }
     }
 

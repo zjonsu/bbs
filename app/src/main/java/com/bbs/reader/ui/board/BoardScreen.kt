@@ -1,11 +1,14 @@
 package com.bbs.reader.ui.board
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,10 +17,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -40,16 +50,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.bbs.reader.data.local.BoardPrefsStore
+import com.bbs.reader.data.local.HomePrefsStore
 import com.bbs.reader.data.local.SettingsStore
 import com.bbs.reader.data.model.AppSettings
+import com.bbs.reader.data.model.BoardListStyle
 import com.bbs.reader.data.model.PostSummary
 import com.bbs.reader.data.model.UiState
 import com.bbs.reader.data.repository.CommunityCatalog
@@ -66,6 +81,7 @@ fun BoardScreen(
     boardId: String,
     settingsStore: SettingsStore,
     boardPrefsStore: BoardPrefsStore,
+    homePrefsStore: HomePrefsStore,
     onBack: () -> Unit,
     onBoardChange: (String) -> Unit = {},
     onPostClick: (PostSummary) -> Unit,
@@ -76,12 +92,21 @@ fun BoardScreen(
     val settings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = AppSettings())
     val hideRead by boardPrefsStore.hideReadFor(boardId)
         .collectAsStateWithLifecycle(initialValue = false)
+    val disabledBoardIds by homePrefsStore.disabledBoardIds
+        .collectAsStateWithLifecycle(initialValue = emptySet())
     val scope = rememberCoroutineScope()
     val board = CommunityCatalog.findBoard(boardId)
     val community = board?.let { CommunityCatalog.findCommunity(it.communityId) }
-    val boards = community?.boards.orEmpty()
+    val boards = community?.boards.orEmpty().filter { it.id !in disabledBoardIds }
     val selectedIndex = boards.indexOfFirst { it.id == boardId }.coerceAtLeast(0)
     val showTabs = boards.size > 1
+
+    // 현재 게시판이 비활성화되면 첫 활성 게시판으로 이동
+    LaunchedEffect(boardId, disabledBoardIds, boards) {
+        if (boards.isNotEmpty() && boardId !in boards.map { it.id }) {
+            onBoardChange(boards.first().id)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -202,56 +227,219 @@ fun BoardScreen(
                     onRetry = viewModel::refresh
                 )
                 is UiState.Success -> {
-                    val listState = rememberLazyListState()
-                    LaunchedEffect(listState) {
-                        snapshotFlow {
-                            val info = listState.layoutInfo
-                            val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-                            last >= info.totalItemsCount - 3
-                        }.distinctUntilChanged().collect { nearEnd ->
-                            if (nearEnd) viewModel.loadMore()
-                        }
+                    val visiblePosts = if (hideRead) {
+                        ui.data.posts.filterNot { readIds.contains(it.id) }
+                    } else {
+                        ui.data.posts
                     }
+                    val isThumbGrid = board?.listStyle == BoardListStyle.THUMBNAIL_GRID
 
                     PullToRefreshBox(
                         isRefreshing = false,
                         onRefresh = viewModel::refresh,
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        val visiblePosts = if (hideRead) {
-                            ui.data.posts.filterNot { readIds.contains(it.id) }
+                        if (isThumbGrid) {
+                            ThumbnailGrid(
+                                posts = visiblePosts,
+                                readIds = readIds,
+                                hasMore = ui.data.hasMore,
+                                onLoadMore = viewModel::loadMore,
+                                onPostClick = onPostClick
+                            )
                         } else {
-                            ui.data.posts
-                        }
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = 24.dp)
-                        ) {
-                            items(visiblePosts, key = { "${it.mid}-${it.id}" }) { post ->
-                                PostRow(
-                                    post = post,
-                                    isRead = readIds.contains(post.id),
-                                    fontSizeSp = settings.baseFontSizeSp,
-                                    onClick = { onPostClick(post) }
-                                )
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-                                )
-                            }
-                            if (!ui.data.hasMore) {
-                                item {
-                                    Text(
-                                        text = "마지막 페이지입니다",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                                        modifier = Modifier.padding(16.dp)
-                                    )
-                                }
-                            }
+                            PostList(
+                                posts = visiblePosts,
+                                readIds = readIds,
+                                fontSizeSp = settings.baseFontSizeSp,
+                                hasMore = ui.data.hasMore,
+                                onLoadMore = viewModel::loadMore,
+                                onPostClick = onPostClick
+                            )
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PostList(
+    posts: List<PostSummary>,
+    readIds: Set<String>,
+    fontSizeSp: Float,
+    hasMore: Boolean,
+    onLoadMore: () -> Unit,
+    onPostClick: (PostSummary) -> Unit
+) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            last >= info.totalItemsCount - 3
+        }.distinctUntilChanged().collect { nearEnd ->
+            if (nearEnd) onLoadMore()
+        }
+    }
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        items(posts, key = { "${it.mid}-${it.id}" }) { post ->
+            PostRow(
+                post = post,
+                isRead = readIds.contains(post.id),
+                fontSizeSp = fontSizeSp,
+                onClick = { onPostClick(post) }
+            )
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+            )
+        }
+        if (!hasMore) {
+            item {
+                Text(
+                    text = "마지막 페이지입니다",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThumbnailGrid(
+    posts: List<PostSummary>,
+    readIds: Set<String>,
+    hasMore: Boolean,
+    onLoadMore: () -> Unit,
+    onPostClick: (PostSummary) -> Unit
+) {
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(gridState) {
+        snapshotFlow {
+            val info = gridState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            last >= info.totalItemsCount - 4
+        }.distinctUntilChanged().collect { nearEnd ->
+            if (nearEnd) onLoadMore()
+        }
+    }
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        state = gridState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        items(posts, key = { "${it.mid}-${it.id}" }) { post ->
+            ThumbnailCard(
+                post = post,
+                isRead = readIds.contains(post.id),
+                onClick = { onPostClick(post) }
+            )
+        }
+        if (!hasMore) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    text = "마지막 페이지입니다",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThumbnailCard(
+    post: PostSummary,
+    isRead: Boolean,
+    onClick: () -> Unit
+) {
+    val alpha = if (isRead) 0.5f else 1f
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!post.thumbnailUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = post.thumbnailUrl,
+                    contentDescription = post.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(shape)
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Filled.Image,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+            if (post.commentCount > 0) {
+                Text(
+                    text = "${post.commentCount}",
+                    fontSize = 11.sp,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(6.dp)
+                        .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                )
+            }
+        }
+        Text(
+            text = post.title,
+            fontSize = 13.sp,
+            lineHeight = 17.sp,
+            fontWeight = if (isRead) FontWeight.Normal else FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp)
+        )
+        Row(
+            modifier = Modifier.padding(top = 2.dp, start = 2.dp, end = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (!post.boardLabel.isNullOrBlank()) {
+                Text(
+                    text = post.boardLabel,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f * alpha),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+            }
+            if (post.time.isNotBlank()) {
+                Text(
+                    text = post.time,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f * alpha),
+                    maxLines = 1
+                )
             }
         }
     }

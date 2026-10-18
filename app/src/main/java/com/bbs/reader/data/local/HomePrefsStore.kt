@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.bbs.reader.data.model.BoardInfo
 import com.bbs.reader.data.model.Community
 import com.bbs.reader.data.repository.CommunityCatalog
 import kotlinx.coroutines.flow.Flow
@@ -14,13 +15,17 @@ import org.json.JSONArray
 
 private val Context.homePrefsDataStore by preferencesDataStore(name = "home_prefs")
 
-/** 홈 커뮤니티 목록 순서 · 활성/비활성 */
+/** 홈 커뮤니티 목록 순서 · 사이트/게시판 활성/비활성 */
 class HomePrefsStore(private val context: Context) {
     private val orderKey = stringPreferencesKey("community_order_json")
     private val disabledKey = stringSetPreferencesKey("disabled_community_ids")
+    private val disabledBoardsKey = stringSetPreferencesKey("disabled_board_ids")
 
     private val catalogIds: List<String>
         get() = CommunityCatalog.communities.map { it.id }
+
+    private val catalogBoardIds: Set<String>
+        get() = CommunityCatalog.communities.flatMap { it.boards.map { b -> b.id } }.toSet()
 
     val communityOrder: Flow<List<String>> = context.homePrefsDataStore.data.map { prefs ->
         mergeOrder(decodeOrder(prefs[orderKey]))
@@ -30,26 +35,53 @@ class HomePrefsStore(private val context: Context) {
         prefs[disabledKey] ?: emptySet()
     }
 
-    /** 홈에 표시할 커뮤니티 (활성만, 저장 순서 반영) */
-    val visibleCommunities: Flow<List<Community>> = combine(
-        communityOrder,
-        disabledCommunityIds
-    ) { order, disabled ->
-        val byId = CommunityCatalog.communities.associateBy { it.id }
-        order.mapNotNull { byId[it] }.filter { it.id !in disabled }
+    val disabledBoardIds: Flow<Set<String>> = context.homePrefsDataStore.data.map { prefs ->
+        prefs[disabledBoardsKey] ?: emptySet()
     }
 
-    /** 설정 화면용: 전체 목록 + 활성 여부 */
+    /** 홈에 표시할 커뮤니티 (활성 사이트 + 활성 게시판만) */
+    val visibleCommunities: Flow<List<Community>> = combine(
+        communityOrder,
+        disabledCommunityIds,
+        disabledBoardIds
+    ) { order, disabledCommunities, disabledBoards ->
+        val byId = CommunityCatalog.communities.associateBy { it.id }
+        order.mapNotNull { id ->
+            if (id in disabledCommunities) return@mapNotNull null
+            val community = byId[id] ?: return@mapNotNull null
+            val enabledBoards = community.boards.filter { it.id !in disabledBoards }
+            if (enabledBoards.isEmpty()) return@mapNotNull null
+            community.copy(boards = enabledBoards)
+        }
+    }
+
+    /** 설정 화면용: 전체 사이트 목록 + 활성 여부 */
     val managedCommunities: Flow<List<ManagedCommunity>> = combine(
         communityOrder,
-        disabledCommunityIds
-    ) { order, disabled ->
+        disabledCommunityIds,
+        disabledBoardIds
+    ) { order, disabledCommunities, disabledBoards ->
         val byId = CommunityCatalog.communities.associateBy { it.id }
         order.mapNotNull { id ->
             val community = byId[id] ?: return@mapNotNull null
-            ManagedCommunity(community = community, enabled = id !in disabled)
+            val enabledBoardCount = community.boards.count { it.id !in disabledBoards }
+            ManagedCommunity(
+                community = community,
+                enabled = id !in disabledCommunities,
+                enabledBoardCount = enabledBoardCount,
+                totalBoardCount = community.boards.size
+            )
         }
     }
+
+    /** 특정 사이트의 게시판 On/Off 목록 */
+    fun managedBoards(communityId: String): Flow<List<ManagedBoard>> =
+        disabledBoardIds.map { disabledBoards ->
+            val community = CommunityCatalog.findCommunity(communityId) ?: return@map emptyList()
+            community.boards.map { board ->
+                ManagedBoard(board = board, enabled = board.id !in disabledBoards)
+            }
+        }
 
     suspend fun setOrder(ids: List<String>) {
         context.homePrefsDataStore.edit { prefs ->
@@ -74,9 +106,17 @@ class HomePrefsStore(private val context: Context) {
         context.homePrefsDataStore.edit { prefs ->
             val current = prefs[disabledKey]?.toMutableSet() ?: mutableSetOf()
             if (enabled) current.remove(communityId) else current.add(communityId)
-            // 카탈로그에 없는 id 정리
             current.retainAll(catalogIds.toSet())
             prefs[disabledKey] = current
+        }
+    }
+
+    suspend fun setBoardEnabled(boardId: String, enabled: Boolean) {
+        context.homePrefsDataStore.edit { prefs ->
+            val current = prefs[disabledBoardsKey]?.toMutableSet() ?: mutableSetOf()
+            if (enabled) current.remove(boardId) else current.add(boardId)
+            current.retainAll(catalogBoardIds)
+            prefs[disabledBoardsKey] = current
         }
     }
 
@@ -111,5 +151,12 @@ class HomePrefsStore(private val context: Context) {
 
 data class ManagedCommunity(
     val community: Community,
+    val enabled: Boolean,
+    val enabledBoardCount: Int = community.boards.size,
+    val totalBoardCount: Int = community.boards.size
+)
+
+data class ManagedBoard(
+    val board: BoardInfo,
     val enabled: Boolean
 )

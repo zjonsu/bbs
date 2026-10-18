@@ -1,6 +1,7 @@
 package com.bbs.reader.data.repository
 
 import com.bbs.reader.data.model.BoardInfo
+import com.bbs.reader.data.model.BoardListStyle
 import com.bbs.reader.data.model.Community
 import com.bbs.reader.data.model.SiteAuthInfo
 
@@ -22,6 +23,11 @@ object CommunityCatalog {
 
     const val SLRCLUB_ID = "slrclub"
     const val SLRCLUB_HOT = "slrclub_hot"
+    const val SLRCLUB_WORK_GALLERY = "slrclub_work_gallery"
+    const val SLRCLUB_THEME_GALLERY = "slrclub_theme_gallery"
+    const val SLRCLUB_STUDY_GALLERY = "slrclub_study_gallery"
+    const val SLRCLUB_PRESS_GALLERY = "slrclub_press_gallery"
+    const val SLRCLUB_TODAY_PICTURES = "slrclub_today_pictures"
     const val SLRCLUB_AD_FREE = "slrclub_ad_free"
 
     val communities: List<Community> = listOf(
@@ -98,13 +104,49 @@ object CommunityCatalog {
         Community(
             id = SLRCLUB_ID,
             name = "SLR클럽",
-            description = "인기글 / 성인게시판",
+            description = "인기글 / 갤러리 / 성인게시판",
             boards = listOf(
                 BoardInfo(
                     id = SLRCLUB_HOT,
                     communityId = SLRCLUB_ID,
                     name = "인기글",
                     listPath = "https://m.slrclub.com/l/hot_article"
+                ),
+                BoardInfo(
+                    id = SLRCLUB_WORK_GALLERY,
+                    communityId = SLRCLUB_ID,
+                    name = "작품갤러리",
+                    listPath = "https://m.slrclub.com/l/work_gallery",
+                    listStyle = BoardListStyle.THUMBNAIL_GRID
+                ),
+                BoardInfo(
+                    id = SLRCLUB_THEME_GALLERY,
+                    communityId = SLRCLUB_ID,
+                    name = "주제갤러리",
+                    listPath = "https://m.slrclub.com/l/theme_gallery",
+                    listStyle = BoardListStyle.THUMBNAIL_GRID
+                ),
+                BoardInfo(
+                    id = SLRCLUB_STUDY_GALLERY,
+                    communityId = SLRCLUB_ID,
+                    name = "습작갤러리",
+                    listPath = "https://m.slrclub.com/l/study_gallery",
+                    listStyle = BoardListStyle.THUMBNAIL_GRID
+                ),
+                BoardInfo(
+                    id = SLRCLUB_PRESS_GALLERY,
+                    communityId = SLRCLUB_ID,
+                    name = "시민기자단",
+                    listPath = "https://m.slrclub.com/l/press_gallery",
+                    listStyle = BoardListStyle.THUMBNAIL_GRID
+                ),
+                BoardInfo(
+                    id = SLRCLUB_TODAY_PICTURES,
+                    communityId = SLRCLUB_ID,
+                    name = "오늘의사진",
+                    listPath = "https://m.slrclub.com/l/today_pictures",
+                    requiresLogin = true,
+                    listStyle = BoardListStyle.THUMBNAIL_GRID
                 ),
                 BoardInfo(
                     id = SLRCLUB_AD_FREE,

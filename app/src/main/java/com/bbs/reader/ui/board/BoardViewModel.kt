@@ -9,6 +9,7 @@ import com.bbs.reader.data.model.PostSummary
 import com.bbs.reader.data.model.UiState
 import com.bbs.reader.data.repository.BoardRepository
 import com.bbs.reader.data.repository.CommunityCatalog
+import com.bbs.reader.data.repository.PostBrowseSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +52,7 @@ class BoardViewModel(
             runCatching { repository.fetchPosts(boardId, currentPage) }
                 .onSuccess { posts ->
                     loaded.addAll(posts)
+                    PostBrowseSession.update(loaded.toList())
                     _state.value = UiState.Success(buildModel(hasMore = posts.isNotEmpty()))
                 }
                 .onFailure { e ->
@@ -78,6 +80,7 @@ class BoardViewModel(
                     } else {
                         currentPage = next
                         loaded.addAll(posts)
+                        PostBrowseSession.update(loaded.toList())
                         _state.value = UiState.Success(buildModel(hasMore = true))
                     }
                 }

@@ -7,13 +7,19 @@ data class Community(
     val boards: List<BoardInfo>
 )
 
+enum class BoardListStyle {
+    LIST,
+    THUMBNAIL_GRID
+}
+
 data class BoardInfo(
     val id: String,
     val communityId: String,
     val name: String,
     val listPath: String,
     /** 목록 열람에 사이트 로그인이 필요한 게시판 */
-    val requiresLogin: Boolean = false
+    val requiresLogin: Boolean = false,
+    val listStyle: BoardListStyle = BoardListStyle.LIST
 )
 
 /** 사이트별 WebView 로그인 설정 */
@@ -36,7 +42,8 @@ data class PostSummary(
     val viewCount: Int,
     val voteCount: Int,
     val url: String,
-    val mid: String
+    val mid: String,
+    val thumbnailUrl: String? = null
 )
 
 data class PostDetail(

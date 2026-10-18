@@ -1,14 +1,17 @@
 package com.bbs.reader.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -40,6 +43,7 @@ fun BoardManageScreen(
     viewModel: SettingsViewModel,
     siteSessionStore: SiteSessionStore,
     onBack: () -> Unit,
+    onCommunityClick: (communityId: String) -> Unit = {},
     onSiteLogin: (communityId: String) -> Unit = {}
 ) {
     val managedCommunities by viewModel.managedCommunities.collectAsStateWithLifecycle()
@@ -71,7 +75,7 @@ fun BoardManageScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             Text(
-                text = "비활성화하면 홈 목록에서 숨겨집니다.\n홈 화면에서 항목을 길게 눌러 순서를 바꿀 수 있습니다.",
+                text = "사이트 이름을 누르면 게시판을 On/Off 할 수 있습니다.\n스위치로 사이트 전체를 숨기거나, 홈에서 길게 눌러 순서를 바꿀 수 있습니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -85,8 +89,9 @@ fun BoardManageScreen(
                 )
             } else {
                 managedCommunities.forEach { item ->
-                    BoardEnableRow(
+                    CommunityManageRow(
                         item = item,
+                        onClick = { onCommunityClick(item.community.id) },
                         onEnabledChange = { enabled ->
                             viewModel.setCommunityEnabled(item.community.id, enabled)
                         }
@@ -123,34 +128,50 @@ fun BoardManageScreen(
 }
 
 @Composable
-private fun BoardEnableRow(
+private fun CommunityManageRow(
     item: ManagedCommunity,
+    onClick: () -> Unit,
     onEnabledChange: (Boolean) -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 10.dp),
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.community.name,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = item.community.description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp)
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onClick)
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.community.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "게시판 ${item.enabledBoardCount}/${item.totalBoardCount} 활성",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "게시판 관리",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                modifier = Modifier.size(22.dp)
             )
         }
         Switch(
             checked = item.enabled,
-            onCheckedChange = onEnabledChange
+            onCheckedChange = onEnabledChange,
+            modifier = Modifier.padding(start = 8.dp)
         )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))

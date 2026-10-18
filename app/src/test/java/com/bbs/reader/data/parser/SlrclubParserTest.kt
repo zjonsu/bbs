@@ -7,6 +7,44 @@ import org.junit.Test
 
 class SlrclubParserTest {
     @Test
+    fun parsePostList_galleryThumbnails() {
+        val html = """
+            <html><body>
+              <ul class="list">
+                <li>
+                  <div class="thumb"><a href="/v/work_gallery/1353027">
+                    <img src="https://media.slrclub.com/2610/18/t/72259552.jpg" class="rt">
+                  </a></div>
+                  <div class="subject"><a href="/v/work_gallery/1353027">가을 바다 풍경</a></div>
+                  <div class="category">풍경/자연</div>
+                  <div class="date">11:44</div>
+                </li>
+                <li>
+                  <div class="thumb"><a href="/v/work_gallery/1353026">
+                    <img src="//media.slrclub.com/2610/18/t/72259488.jpg" class="rt">
+                  </a></div>
+                  <div class="subject"><a href="/v/work_gallery/1353026">진조리 만추</a>
+                    <span class="cmt">[1]</span></div>
+                  <div class="category">풍경/자연</div>
+                  <div class="date">11:32</div>
+                </li>
+              </ul>
+            </body></html>
+        """.trimIndent()
+
+        val posts = SoftAssertGallery(html)
+        assertEquals(2, posts.size)
+        assertEquals("1353027", posts[0].id)
+        assertEquals("가을 바다 풍경", posts[0].title)
+        assertEquals("11:44", posts[0].time)
+        assertEquals("풍경/자연", posts[0].boardLabel)
+        assertEquals("https://media.slrclub.com/2610/18/t/72259552.jpg", posts[0].thumbnailUrl)
+        assertEquals("slrclub:work_gallery", posts[0].mid)
+        assertEquals(1, posts[1].commentCount)
+        assertEquals("https://media.slrclub.com/2610/18/t/72259488.jpg", posts[1].thumbnailUrl)
+    }
+
+    @Test
     fun parsePostList_extractsItems() {
         val html = """
             <html><body>
@@ -125,6 +163,9 @@ class SlrclubParserTest {
         assertEquals("발더스게이트삼", comments[0].author)
         assertTrue(comments[0].contentHtml.contains("김혜수와 실제 사귀기도 했습니다."))
     }
+
+    private fun SoftAssertGallery(html: String) =
+        SlrclubParser.parsePostList(html, "slrclub_work_gallery", "work_gallery")
 
     private fun SoftAssertCommentParams(html: String) =
         SlrclubParser.extractCommentParams(html)!!
