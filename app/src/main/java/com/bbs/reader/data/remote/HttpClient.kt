@@ -15,7 +15,10 @@ object HttpClient {
     private val metaCharsetPattern =
         Regex("""charset\s*=\s*["']?\s*([a-zA-Z0-9_\-]+)""", RegexOption.IGNORE_CASE)
 
+    val cookieJar = AppCookieJar()
+
     val client: OkHttpClient = OkHttpClient.Builder()
+        .cookieJar(cookieJar)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(45, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)

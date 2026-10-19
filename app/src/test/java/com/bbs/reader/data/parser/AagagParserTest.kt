@@ -55,6 +55,28 @@ class AagagParserTest {
     }
 
     @Test
+    fun convertStags_replacesVideoTagsWithPlayableVideo() {
+        val raw = """<p>[sTag]{"m":"mp4","q":"Vid01","width":640,"height":360}[/sTag]</p>"""
+        val html = AagagParser.convertStags(raw)
+        assertTrue(html.contains("<video"))
+        assertTrue(html.contains("https://i.aagag.com/o/Vid01.mp4"))
+        assertTrue(html.contains("poster=\"https://i.aagag.com/o/Vid01.jpg\""))
+    }
+
+    @Test
+    fun parseCommentsJson_convertsImageStags() {
+        val json = """
+            {"mode":"success","total":1,"comment":[
+              {"w_idx":1,"w_cmt_reply":null,"w_nick":"유저","w_content":"[sTag]{\"m\":\"img\",\"q\":\"Em01\",\"width\":64,\"height\":64}[/sTag]","w_good":0,"w_bad":0,"stime":"2026-10-05 17:40:54","state":1}
+            ]}
+        """.trimIndent()
+        val comments = AagagParser.parseCommentsJson(json)
+        assertEquals(1, comments.size)
+        assertTrue(comments[0].contentHtml.contains("<img"))
+        assertTrue(comments[0].contentHtml.contains("Em01.webp"))
+    }
+
+    @Test
     fun parsePostDetail_readsTitleContentAndMeta() {
         val html = """
             <html><body>

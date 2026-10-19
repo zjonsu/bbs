@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.bbs.reader.data.local.ReadHistoryStore
+import com.bbs.reader.data.model.LoginRequiredException
 import com.bbs.reader.data.model.PostSummary
 import com.bbs.reader.data.model.UiState
 import com.bbs.reader.data.repository.BoardRepository
 import com.bbs.reader.data.repository.CommunityCatalog
+import com.bbs.reader.data.repository.PostBrowseSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,10 +52,18 @@ class BoardViewModel(
             runCatching { repository.fetchPosts(boardId, currentPage) }
                 .onSuccess { posts ->
                     loaded.addAll(posts)
+                    PostBrowseSession.update(loaded.toList())
                     _state.value = UiState.Success(buildModel(hasMore = posts.isNotEmpty()))
                 }
                 .onFailure { e ->
-                    _state.value = UiState.Error(e.message ?: "목록을 불러오지 못했습니다.")
+                    _state.value = when (e) {
+                        is LoginRequiredException -> UiState.LoginRequired(
+                            communityId = e.communityId,
+                            siteName = e.siteName,
+                            message = e.message ?: "로그인이 필요한 게시판입니다."
+                        )
+                        else -> UiState.Error(e.message ?: "목록을 불러오지 못했습니다.")
+                    }
                 }
         }
     }
@@ -70,6 +80,7 @@ class BoardViewModel(
                     } else {
                         currentPage = next
                         loaded.addAll(posts)
+                        PostBrowseSession.update(loaded.toList())
                         _state.value = UiState.Success(buildModel(hasMore = true))
                     }
                 }

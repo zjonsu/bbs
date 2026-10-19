@@ -1,7 +1,9 @@
 package com.bbs.reader.data.repository
 
 import com.bbs.reader.data.model.BoardInfo
+import com.bbs.reader.data.model.BoardListStyle
 import com.bbs.reader.data.model.Community
+import com.bbs.reader.data.model.SiteAuthInfo
 
 object CommunityCatalog {
     const val DDANZI_ID = "ddanzi"
@@ -18,6 +20,18 @@ object CommunityCatalog {
     const val HUMORUNIV_ID = "humoruniv"
     const val HUMORUNIV_PDS_BEST = "humoruniv_pds_best"
     const val HUMORUNIV_SSUDA_BEST = "humoruniv_ssuda_best"
+
+    const val SLRCLUB_ID = "slrclub"
+    const val SLRCLUB_HOT = "slrclub_hot"
+    const val SLRCLUB_WORK_GALLERY = "slrclub_work_gallery"
+    const val SLRCLUB_THEME_GALLERY = "slrclub_theme_gallery"
+    const val SLRCLUB_STUDY_GALLERY = "slrclub_study_gallery"
+    const val SLRCLUB_PRESS_GALLERY = "slrclub_press_gallery"
+    const val SLRCLUB_TODAY_PICTURES = "slrclub_today_pictures"
+    const val SLRCLUB_AD_FREE = "slrclub_ad_free"
+
+    const val BOBAEDREAM_ID = "bobaedream"
+    const val BOBAEDREAM_BEST = "bobaedream_best"
 
     val communities: List<Community> = listOf(
         Community(
@@ -89,6 +103,90 @@ object CommunityCatalog {
                     listPath = "https://m.humoruniv.com/main.html"
                 )
             )
+        ),
+        Community(
+            id = SLRCLUB_ID,
+            name = "SLR클럽",
+            description = "인기글 / 갤러리 / 성인게시판",
+            boards = listOf(
+                BoardInfo(
+                    id = SLRCLUB_HOT,
+                    communityId = SLRCLUB_ID,
+                    name = "인기글",
+                    listPath = "https://m.slrclub.com/l/hot_article"
+                ),
+                BoardInfo(
+                    id = SLRCLUB_WORK_GALLERY,
+                    communityId = SLRCLUB_ID,
+                    name = "작품갤러리",
+                    listPath = "https://m.slrclub.com/l/work_gallery",
+                    listStyle = BoardListStyle.THUMBNAIL_GRID
+                ),
+                BoardInfo(
+                    id = SLRCLUB_THEME_GALLERY,
+                    communityId = SLRCLUB_ID,
+                    name = "주제갤러리",
+                    listPath = "https://m.slrclub.com/l/theme_gallery",
+                    listStyle = BoardListStyle.THUMBNAIL_GRID
+                ),
+                BoardInfo(
+                    id = SLRCLUB_STUDY_GALLERY,
+                    communityId = SLRCLUB_ID,
+                    name = "습작갤러리",
+                    listPath = "https://m.slrclub.com/l/study_gallery",
+                    listStyle = BoardListStyle.THUMBNAIL_GRID
+                ),
+                BoardInfo(
+                    id = SLRCLUB_PRESS_GALLERY,
+                    communityId = SLRCLUB_ID,
+                    name = "시민기자단",
+                    listPath = "https://m.slrclub.com/l/press_gallery",
+                    listStyle = BoardListStyle.THUMBNAIL_GRID
+                ),
+                BoardInfo(
+                    id = SLRCLUB_TODAY_PICTURES,
+                    communityId = SLRCLUB_ID,
+                    name = "오늘의사진",
+                    listPath = "https://m.slrclub.com/l/today_pictures",
+                    requiresLogin = true,
+                    listStyle = BoardListStyle.THUMBNAIL_GRID
+                ),
+                BoardInfo(
+                    id = SLRCLUB_AD_FREE,
+                    communityId = SLRCLUB_ID,
+                    name = "성인게시판",
+                    listPath = "https://m.slrclub.com/l/ad_free",
+                    requiresLogin = true
+                )
+            )
+        ),
+        Community(
+            id = BOBAEDREAM_ID,
+            name = "보배드림",
+            description = "베스트글",
+            boards = listOf(
+                BoardInfo(
+                    id = BOBAEDREAM_BEST,
+                    communityId = BOBAEDREAM_ID,
+                    name = "베스트",
+                    listPath = "https://m.bobaedream.co.kr/board/new_writing/best"
+                )
+            )
+        )
+    )
+
+    val siteAuthList: List<SiteAuthInfo> = listOf(
+        SiteAuthInfo(
+            communityId = SLRCLUB_ID,
+            name = "SLR클럽",
+            loginUrl = "https://m.slrclub.com/?type=login",
+            cookieUrls = listOf(
+                "https://m.slrclub.com",
+                "https://www.slrclub.com",
+                "https://secure.slrclub.com",
+                "https://slrclub.com"
+            ),
+            homeUrl = "https://m.slrclub.com/"
         )
     )
 
@@ -97,9 +195,16 @@ object CommunityCatalog {
     fun findBoard(boardId: String): BoardInfo? =
         communities.flatMap { it.boards }.find { it.id == boardId }
 
+    fun findSiteAuth(communityId: String): SiteAuthInfo? =
+        siteAuthList.find { it.communityId == communityId }
+
     fun isAagagMid(mid: String): Boolean = mid == "issue" || mid == "deal" || mid == "mirror"
 
     fun isDamoangMid(mid: String): Boolean = mid.startsWith("damoang:")
 
     fun isHumorunivMid(mid: String): Boolean = mid.startsWith("humoruniv:")
+
+    fun isSlrclubMid(mid: String): Boolean = mid.startsWith("slrclub:")
+
+    fun isBobaedreamMid(mid: String): Boolean = mid.startsWith("bobaedream:")
 }

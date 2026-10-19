@@ -129,7 +129,9 @@ object AagagParser {
             } else {
                 when (type) {
                     "img", "jpg" -> """<p><img src="$CDN/$q.webp" alt=""></p>"""
-                    "gif", "mp4", "video" -> """<p><img src="$CDN/$q.jpg" alt="video"></p>"""
+                    "gif" -> """<p><img src="$CDN/$q.webp" alt=""></p>"""
+                    "mp4", "video" ->
+                        """<p><video controls playsinline preload="metadata" poster="$CDN/$q.jpg" src="$CDN/$q.mp4"></video></p>"""
                     else -> """<p><img src="$CDN/$q.webp" alt=""></p>"""
                 }
             }
@@ -145,7 +147,9 @@ object AagagParser {
         if (id.isBlank()) return null
         val author = unescapeJsonString(matchGroup(jsonStringField("w_nick"), obj, 1))
         val time = matchGroup(jsonStringField("stime"), obj, 1)
-        val content = unescapeJsonString(matchGroup(jsonStringField("w_content"), obj, 1))
+        val content = convertStags(
+            unescapeJsonString(matchGroup(jsonStringField("w_content"), obj, 1))
+        )
         val replyRaw = matchNullableString(obj, "w_cmt_reply")
         val depth = if (replyRaw.isNullOrBlank()) 0 else replyRaw.count { it == '|' }
         return CommentItem(

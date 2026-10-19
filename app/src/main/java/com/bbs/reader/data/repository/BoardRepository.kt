@@ -2,17 +2,24 @@ package com.bbs.reader.data.repository
 
 import com.bbs.reader.data.model.BoardInfo
 import com.bbs.reader.data.model.CommentItem
+import com.bbs.reader.data.model.LoginRequiredException
 import com.bbs.reader.data.model.PostDetail
 import com.bbs.reader.data.model.PostSummary
 import com.bbs.reader.data.parser.AagagParser
+import com.bbs.reader.data.parser.BobaedreamParser
 import com.bbs.reader.data.parser.DamoangParser
 import com.bbs.reader.data.parser.DdanziParser
 import com.bbs.reader.data.parser.HumorunivParser
+import com.bbs.reader.data.parser.SlrclubParser
 import com.bbs.reader.data.remote.HttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 class BoardRepository {
+    /** SLR 페이지 커서: boardId → page2 의 숫자 ID */
+    private val slrPage2Ids = ConcurrentHashMap<String, Int>()
+
     suspend fun fetchPosts(boardId: String, page: Int = 1): List<PostSummary> =
         withContext(Dispatchers.IO) {
             val board = CommunityCatalog.findBoard(boardId)
@@ -21,6 +28,8 @@ class BoardRepository {
                 CommunityCatalog.AAGAG_ID -> fetchAagagPosts(board, page)
                 CommunityCatalog.DAMOANG_ID -> fetchDamoangPosts(board, page)
                 CommunityCatalog.HUMORUNIV_ID -> fetchHumorunivPosts(board, page)
+                CommunityCatalog.SLRCLUB_ID -> fetchSlrclubPosts(board, page)
+                CommunityCatalog.BOBAEDREAM_ID -> fetchBobaedreamPosts(board, page)
                 else -> fetchDdanziPosts(board, page)
             }
         }
@@ -31,6 +40,8 @@ class BoardRepository {
                 CommunityCatalog.isAagagMid(mid) -> fetchAagagDetail(mid, postId)
                 CommunityCatalog.isDamoangMid(mid) -> fetchDamoangDetail(mid, postId)
                 CommunityCatalog.isHumorunivMid(mid) -> fetchHumorunivDetail(mid, postId)
+                CommunityCatalog.isSlrclubMid(mid) -> fetchSlrclubDetail(mid, postId)
+                CommunityCatalog.isBobaedreamMid(mid) -> fetchBobaedreamDetail(mid, postId)
                 else -> fetchDdanziDetail(mid, postId)
             }
         }
@@ -179,5 +190,108 @@ class BoardRepository {
             forceCharset = "EUC-KR"
         )
         return HumorunivParser.parsePostDetail(html, url, mid, postId)
+    }
+
+    private fun fetchSlrclubPosts(board: BoardInfo, page: Int): List<PostSummary> {
+        val base = board.listPath.trimEnd('/')
+        val slug = base.substringAfterLast('/')
+        val url = when {
+            page <= 1 -> base
+            else -> {
+                val page2Id = slrPage2Ids[board.id]
+                    ?: run {
+                        val firstHtml = HttpClient.get(base, referer = SlrclubParser.BASE)
+                        if (SlrclubParser.isLoginRequired(firstHtml)) {
+                            throw LoginRequiredException(
+                                communityId = board.communityId,
+                                siteName = CommunityCatalog.findCommunity(board.communityId)?.name
+                                    ?: "SLR클럽"
+                            )
+                        }
+                        val id = SlrclubParser.extractPage2Id(firstHtml)
+                        if (id != null) slrPage2Ids[board.id] = id
+                        id
+                    }
+                if (page2Id == null) return emptyList()
+                val pageId = page2Id - (page - 2)
+                if (pageId < 1) return emptyList()
+                "$base/$pageId"
+            }
+        }
+        val html = HttpClient.get(url, referer = SlrclubParser.BASE)
+        if (SlrclubParser.isLoginRequired(html)) {
+            throw LoginRequiredException(
+                communityId = board.communityId,
+                siteName = CommunityCatalog.findCommunity(board.communityId)?.name ?: "SLR클럽"
+            )
+        }
+        if (page <= 1) {
+            SlrclubParser.extractPage2Id(html)?.let { slrPage2Ids[board.id] = it }
+        }
+        return SlrclubParser.parsePostList(html, board.id, slug)
+    }
+
+    private fun fetchSlrclubDetail(mid: String, postId: String): PostDetail {
+        val slug = SlrclubParser.boardOfMid(mid)
+            ?: throw IllegalArgumentException("잘못된 SLR mid: $mid")
+        val url = SlrclubParser.detailUrl(slug, postId)
+        val html = HttpClient.get(url, referer = "$BASE_SLR/l/$slug")
+        if (SlrclubParser.isLoginRequired(html)) {
+            throw LoginRequiredException(
+                communityId = CommunityCatalog.SLRCLUB_ID,
+                siteName = "SLR클럽"
+            )
+        }
+        val detail = SlrclubParser.parsePostDetail(html, url, mid, postId)
+        val comments = fetchSlrclubComments(html, url)
+        return detail.copy(
+            comments = comments,
+            commentCount = if (comments.isNotEmpty()) comments.size else detail.commentCount
+        )
+    }
+
+    private fun fetchSlrclubComments(detailHtml: String, referer: String): List<CommentItem> {
+        return try {
+            val params = SlrclubParser.extractCommentParams(detailHtml) ?: return emptyList()
+            val json = HttpClient.postForm(
+                url = "$BASE_SLR/bbs/comment_db/load.php",
+                fields = mapOf(
+                    "id" to params.bbsId,
+                    "tos" to params.tos,
+                    "no" to params.cmrNo,
+                    "sno" to params.page,
+                    "spl" to params.split,
+                    "mno" to params.cmx,
+                    "gp" to "mobile",
+                    "ksearch" to ""
+                ),
+                referer = referer
+            )
+            SlrclubParser.parseCommentsJson(json)
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun fetchBobaedreamPosts(board: BoardInfo, page: Int): List<PostSummary> {
+        val code = board.listPath.trimEnd('/').substringAfterLast('/')
+        val url = BobaedreamParser.listUrl(code, page)
+        val html = HttpClient.get(url, referer = BobaedreamParser.BASE)
+        return BobaedreamParser.parsePostList(html, board.id, code)
+    }
+
+    private fun fetchBobaedreamDetail(mid: String, postId: String): PostDetail {
+        val code = BobaedreamParser.boardOfMid(mid)
+            ?: throw IllegalArgumentException("잘못된 보배드림 mid: $mid")
+        val url = BobaedreamParser.detailUrl(code, postId)
+        val html = HttpClient.get(
+            url = url,
+            referer = BobaedreamParser.listUrl(code, 1)
+        )
+        return BobaedreamParser.parsePostDetail(html, url, mid, postId)
+    }
+
+    companion object {
+        private const val BASE_SLR = "https://m.slrclub.com"
     }
 }
