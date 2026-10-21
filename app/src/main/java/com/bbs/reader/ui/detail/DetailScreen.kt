@@ -2,27 +2,17 @@ package com.bbs.reader.ui.detail
 
 import android.text.Html
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bbs.reader.data.local.ReadHistoryStore
@@ -40,7 +30,6 @@ import com.bbs.reader.ui.components.LoadingView
 import com.bbs.reader.ui.components.LoginRequiredView
 import com.bbs.reader.ui.reader.isReaderDark
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 @Composable
 fun DetailScreen(
@@ -67,6 +56,7 @@ fun DetailScreen(
             key = "$mid-$postId",
             factory = DetailViewModel.factory(mid, postId, repository, readHistoryStore)
         )
+        LaunchedEffect(Unit) { vm.markAsRead() }
         LaunchedEffect(reloadToken) {
             if (reloadToken != 0) {
                 onReloadConsumed()
@@ -90,73 +80,42 @@ fun DetailScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            beyondViewportPageCount = 1,
-            key = { page ->
-                val post = browsePosts[page]
-                "${post.mid}-${post.id}"
-            }
-        ) { page ->
+    // [확정 2026-10-21] Pager 드래그 OFF + WebView 가로 감지. 원복 금지 → .cursor/rules/detail-swipe-gestures.mdc
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize(),
+        beyondViewportPageCount = 1,
+        userScrollEnabled = false,
+        key = { page ->
             val post = browsePosts[page]
-            DetailPage(
-                post = post,
-                repository = repository,
-                readHistoryStore = readHistoryStore,
-                settingsStore = settingsStore,
-                reloadToken = if (page == pagerState.settledPage) reloadToken else 0,
-                onLoginClick = onLoginClick
-            )
+            "${post.mid}-${post.id}"
         }
-
-        // WebView가 제스처를 가로챌 때를 대비한 가장자리 스와이프
-        Row(modifier = Modifier.fillMaxSize()) {
-            EdgeSwipeZone(
-                modifier = Modifier
-                    .width(36.dp)
-                    .fillMaxHeight(),
-                onSwipe = { dx ->
-                    if (dx > 56f && pagerState.currentPage > 0) {
-                        scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
-                    }
+    ) { page ->
+        val post = browsePosts[page]
+        DetailPage(
+            post = post,
+            repository = repository,
+            readHistoryStore = readHistoryStore,
+            settingsStore = settingsStore,
+            isActive = page == pagerState.settledPage,
+            reloadToken = if (page == pagerState.settledPage) reloadToken else 0,
+            onLoginClick = onLoginClick,
+            // currentPage 기준: 보이는 페이지에서 항상 가로 스와이프 수신
+            enableHorizontalSwipe = page == pagerState.currentPage,
+            onHorizontalSwipe = { dx ->
+                val target = when {
+                    dx < 0 && pagerState.currentPage < browsePosts.lastIndex ->
+                        pagerState.currentPage + 1
+                    dx > 0 && pagerState.currentPage > 0 ->
+                        pagerState.currentPage - 1
+                    else -> null
                 }
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            EdgeSwipeZone(
-                modifier = Modifier
-                    .width(36.dp)
-                    .fillMaxHeight(),
-                onSwipe = { dx ->
-                    if (dx < -56f && pagerState.currentPage < browsePosts.lastIndex) {
-                        scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
-                    }
+                if (target != null) {
+                    scope.launch { pagerState.animateScrollToPage(target) }
                 }
-            )
-        }
+            }
+        )
     }
-}
-
-@Composable
-private fun EdgeSwipeZone(
-    modifier: Modifier,
-    onSwipe: (dx: Float) -> Unit
-) {
-    var totalDx by remember { mutableFloatStateOf(0f) }
-    Box(
-        modifier = modifier.pointerInput(Unit) {
-            detectHorizontalDragGestures(
-                onDragStart = { totalDx = 0f },
-                onDragEnd = {
-                    if (abs(totalDx) > 56f) onSwipe(totalDx)
-                    totalDx = 0f
-                },
-                onDragCancel = { totalDx = 0f },
-                onHorizontalDrag = { _, dragAmount -> totalDx += dragAmount }
-            )
-        }
-    )
 }
 
 @Composable
@@ -165,20 +124,27 @@ private fun DetailPage(
     repository: BoardRepository,
     readHistoryStore: ReadHistoryStore,
     settingsStore: SettingsStore,
+    isActive: Boolean,
     reloadToken: Int,
-    onLoginClick: (communityId: String) -> Unit
+    onLoginClick: (communityId: String) -> Unit,
+    enableHorizontalSwipe: Boolean,
+    onHorizontalSwipe: (dx: Float) -> Unit
 ) {
     val vm: DetailViewModel = viewModel(
         key = "${post.mid}-${post.id}",
         factory = DetailViewModel.factory(post.mid, post.id, repository, readHistoryStore)
     )
+    LaunchedEffect(isActive) {
+        if (isActive) vm.markAsRead()
+    }
     LaunchedEffect(reloadToken) {
         if (reloadToken != 0) vm.load()
     }
     DetailScaffold(
         viewModel = vm,
         settingsStore = settingsStore,
-        onLoginClick = onLoginClick
+        onLoginClick = onLoginClick,
+        onHorizontalSwipe = if (enableHorizontalSwipe) onHorizontalSwipe else null
     )
 }
 
@@ -186,7 +152,8 @@ private fun DetailPage(
 private fun DetailScaffold(
     viewModel: DetailViewModel,
     settingsStore: SettingsStore,
-    onLoginClick: (communityId: String) -> Unit
+    onLoginClick: (communityId: String) -> Unit,
+    onHorizontalSwipe: ((dx: Float) -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val settings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = AppSettings())
@@ -214,6 +181,7 @@ private fun DetailScaffold(
                     html = pageHtml,
                     appSettings = settings,
                     enablePinchZoom = true,
+                    onHorizontalSwipe = onHorizontalSwipe,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)

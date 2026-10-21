@@ -33,7 +33,6 @@ class DetailViewModel(
             _state.value = UiState.Loading
             runCatching { repository.fetchPostDetail(mid, postId) }
                 .onSuccess { detail ->
-                    readHistoryStore.markRead(postId)
                     _state.value = UiState.Success(detail)
                     enrichLinkTitles(detail)
                 }
@@ -47,6 +46,13 @@ class DetailViewModel(
                         else -> UiState.Error(e.message ?: "글을 불러오지 못했습니다.")
                     }
                 }
+        }
+    }
+
+    /** Prefetch(인접 페이지)와 구분: 사용자가 실제로 이 글을 보고 있을 때만 호출 */
+    fun markAsRead() {
+        viewModelScope.launch {
+            readHistoryStore.markRead(postId)
         }
     }
 
