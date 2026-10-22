@@ -2,6 +2,8 @@ package com.bbs.reader.ui.components
 
 import android.content.Intent
 import android.net.Uri
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -16,6 +18,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.bbs.reader.data.model.AppSettings
 import com.bbs.reader.ui.reader.toReaderCss
+import kotlin.math.abs
 
 @Composable
 fun LoadingView(modifier: Modifier = Modifier) {
@@ -84,12 +88,20 @@ fun LoginRequiredView(
     }
 }
 
+/**
+ * @param onHorizontalSwipe 가로가 세로보다 명확히 클 때만 호출 (dx: +오른쪽 / -왼쪽).
+ *        null이면 제스처 감지를 붙이지 않는다.
+ *
+ * [확정 2026-10-21] 상세 세로/가로 분리 계약. 감지 로직·임계·nestedScroll 원복 금지
+ * → .cursor/rules/detail-swipe-gestures.mdc
+ */
 @Composable
 fun HtmlContent(
     html: String,
     appSettings: AppSettings,
     modifier: Modifier = Modifier,
-    enablePinchZoom: Boolean = false
+    enablePinchZoom: Boolean = false,
+    onHorizontalSwipe: ((dx: Float) -> Unit)? = null
 ) {
     val css = remember(appSettings) { appSettings.toReaderCss() }
     val meta = if (enablePinchZoom) {
@@ -112,6 +124,9 @@ fun HtmlContent(
         </html>
         """.trimIndent()
     }
+
+    val swipeHolder = remember { HorizontalSwipeHolder() }
+    SideEffect { swipeHolder.onSwipe = onHorizontalSwipe }
 
     AndroidView(
         modifier = modifier.fillMaxWidth(),
@@ -173,18 +188,92 @@ fun HtmlContent(
                     settings.builtInZoomControls = false
                 }
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                isNestedScrollingEnabled = true
+                // Pager와 제스처 경쟁을 줄이기 위해 nested scroll 끄고, 가로는 OnTouch로만 판정
+                isNestedScrollingEnabled = false
+                attachHorizontalSwipeDetector(this, swipeHolder)
             }
         },
         update = { webView ->
-            // assets 폰트(@font-face) 로드를 위해 baseURL 사용
-            webView.loadDataWithBaseURL(
-                "file:///android_asset/",
-                wrapped,
-                "text/html",
-                "utf-8",
-                null
-            )
+            swipeHolder.onSwipe = onHorizontalSwipe
+            // 같은 HTML이면 재로드하지 않음 (터치 중 CANCEL 방지)
+            if (webView.tag != wrapped) {
+                webView.tag = wrapped
+                webView.loadDataWithBaseURL(
+                    "file:///android_asset/",
+                    wrapped,
+                    "text/html",
+                    "utf-8",
+                    null
+                )
+            }
         }
     )
+}
+
+private class HorizontalSwipeHolder {
+    @Volatile
+    var onSwipe: ((Float) -> Unit)? = null
+}
+
+private fun attachHorizontalSwipeDetector(webView: WebView, holder: HorizontalSwipeHolder) {
+    var startX = 0f
+    var startY = 0f
+    var pointerCount = 0
+    var navigated = false
+
+    fun tryNavigate(dx: Float, dy: Float): Boolean {
+        val cb = holder.onSwipe ?: return false
+        if (navigated || pointerCount > 1) return false
+        val minDistance = (webView.width.coerceAtLeast(1) * 0.12f).coerceAtLeast(56f)
+        if (abs(dx) > abs(dy) * 1.5f && abs(dx) >= minDistance) {
+            navigated = true
+            cb.invoke(dx)
+            return true
+        }
+        return false
+    }
+
+    val flingDetector = GestureDetector(
+        webView.context,
+        object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+
+            override fun onFling(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                velocityX: Float,
+                velocityY: Float
+            ): Boolean {
+                if (e1 == null) return false
+                if (abs(velocityX) <= abs(velocityY) * 1.5f || abs(velocityX) <= 600f) {
+                    return false
+                }
+                return tryNavigate(e2.rawX - e1.rawX, e2.rawY - e1.rawY)
+            }
+        }
+    )
+
+    webView.setOnTouchListener { v, event ->
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                pointerCount = 1
+                navigated = false
+                startX = event.rawX
+                startY = event.rawY
+                v.parent?.requestDisallowInterceptTouchEvent(true)
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> pointerCount = event.pointerCount
+            MotionEvent.ACTION_POINTER_UP -> pointerCount = event.pointerCount - 1
+            MotionEvent.ACTION_UP -> {
+                // 플링 미감지 시 최종 변위로 판정
+                if (!navigated) {
+                    tryNavigate(event.rawX - startX, event.rawY - startY)
+                }
+                pointerCount = 0
+            }
+            MotionEvent.ACTION_CANCEL -> pointerCount = 0
+        }
+        flingDetector.onTouchEvent(event)
+        false
+    }
 }

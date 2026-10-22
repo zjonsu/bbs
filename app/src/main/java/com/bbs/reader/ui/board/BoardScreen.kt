@@ -1,5 +1,6 @@
 package com.bbs.reader.ui.board
 
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -46,60 +49,72 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.bbs.reader.data.local.BoardPrefsStore
 import com.bbs.reader.data.local.HomePrefsStore
+import com.bbs.reader.data.local.ReadHistoryStore
 import com.bbs.reader.data.local.SettingsStore
 import com.bbs.reader.data.model.AppSettings
 import com.bbs.reader.data.model.BoardListStyle
 import com.bbs.reader.data.model.PostSummary
 import com.bbs.reader.data.model.UiState
+import com.bbs.reader.data.repository.BoardRepository
 import com.bbs.reader.data.repository.CommunityCatalog
 import com.bbs.reader.ui.components.ErrorView
 import com.bbs.reader.ui.components.LoadingView
 import com.bbs.reader.ui.components.LoginRequiredView
+import com.bbs.reader.ui.gestures.AxisLockNestedScrollConnection
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BoardScreen(
-    viewModel: BoardViewModel,
     boardId: String,
+    repository: BoardRepository,
+    readHistoryStore: ReadHistoryStore,
     settingsStore: SettingsStore,
     boardPrefsStore: BoardPrefsStore,
     homePrefsStore: HomePrefsStore,
+    loginRefreshToken: Int = 0,
+    onLoginRefreshConsumed: () -> Unit = {},
     onBack: () -> Unit,
     onBoardChange: (String) -> Unit = {},
     onPostClick: (PostSummary) -> Unit,
     onLoginClick: (communityId: String) -> Unit = {}
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    val readIds by viewModel.readIds.collectAsStateWithLifecycle()
     val settings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = AppSettings())
-    val hideRead by boardPrefsStore.hideReadFor(boardId)
-        .collectAsStateWithLifecycle(initialValue = false)
     val disabledBoardIds by homePrefsStore.disabledBoardIds
         .collectAsStateWithLifecycle(initialValue = emptySet())
     val scope = rememberCoroutineScope()
-    val board = CommunityCatalog.findBoard(boardId)
-    val community = board?.let { CommunityCatalog.findCommunity(it.communityId) }
+    val routeBoard = CommunityCatalog.findBoard(boardId)
+    val community = routeBoard?.let { CommunityCatalog.findCommunity(it.communityId) }
     val boards = community?.boards.orEmpty().filter { it.id !in disabledBoardIds }
     val selectedIndex = boards.indexOfFirst { it.id == boardId }.coerceAtLeast(0)
-    val showTabs = boards.size > 1
+    val showPager = boards.size > 1
+
+    val pagerState = rememberPagerState(initialPage = selectedIndex) {
+        boards.size.coerceAtLeast(1)
+    }
 
     // 현재 게시판이 비활성화되면 첫 활성 게시판으로 이동
     LaunchedEffect(boardId, disabledBoardIds, boards) {
@@ -107,6 +122,44 @@ fun BoardScreen(
             onBoardChange(boards.first().id)
         }
     }
+
+    // route boardId ↔ pager 동기화
+    LaunchedEffect(boardId, boards) {
+        val idx = boards.indexOfFirst { it.id == boardId }
+        if (idx >= 0 && pagerState.currentPage != idx) {
+            pagerState.scrollToPage(idx)
+        }
+    }
+
+    LaunchedEffect(pagerState, boards) {
+        snapshotFlow { pagerState.settledPage }
+            .distinctUntilChanged()
+            .collect { page ->
+                val id = boards.getOrNull(page)?.id ?: return@collect
+                if (id != boardId) onBoardChange(id)
+            }
+    }
+
+    var refreshNonce by remember { mutableIntStateOf(0) }
+    LaunchedEffect(loginRefreshToken) {
+        if (loginRefreshToken != 0) {
+            onLoginRefreshConsumed()
+            refreshNonce++
+        }
+    }
+
+    val activeBoardId = boards.getOrNull(pagerState.currentPage)?.id ?: boardId
+    val activeBoard = CommunityCatalog.findBoard(activeBoardId)
+    val hideRead by boardPrefsStore.hideReadFor(activeBoardId)
+        .collectAsStateWithLifecycle(initialValue = false)
+
+    // route 교체(remount) 후에도 목록 상태가 유지되도록 Activity 스코프 VM 사용
+    val activity = LocalContext.current as ComponentActivity
+    val activeVm: BoardViewModel = viewModel(
+        viewModelStoreOwner = activity,
+        key = "board-$activeBoardId",
+        factory = BoardViewModel.factory(activeBoardId, repository, readHistoryStore)
+    )
 
     Scaffold(
         topBar = {
@@ -131,7 +184,7 @@ fun BoardScreen(
                     }
                     val titleText = buildString {
                         append(community?.name ?: "게시판")
-                        val boardName = board?.name.orEmpty()
+                        val boardName = activeBoard?.name.orEmpty()
                         if (boardName.isNotBlank()) append("[$boardName]")
                     }
                     Text(
@@ -147,7 +200,7 @@ fun BoardScreen(
                     IconButton(
                         onClick = {
                             scope.launch {
-                                boardPrefsStore.setHideRead(boardId, !hideRead)
+                                boardPrefsStore.setHideRead(activeBoardId, !hideRead)
                             }
                         },
                         modifier = Modifier.size(40.dp)
@@ -177,7 +230,7 @@ fun BoardScreen(
                         }
                     }
                     IconButton(
-                        onClick = viewModel::refresh,
+                        onClick = activeVm::refresh,
                         modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
@@ -195,16 +248,18 @@ fun BoardScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (showTabs) {
+            if (showPager) {
                 ScrollableTabRow(
-                    selectedTabIndex = selectedIndex,
+                    selectedTabIndex = pagerState.currentPage.coerceIn(0, boards.lastIndex),
                     edgePadding = 12.dp,
                     divider = {}
                 ) {
                     boards.forEachIndexed { index, info ->
                         Tab(
-                            selected = index == selectedIndex,
-                            onClick = { if (info.id != boardId) onBoardChange(info.id) },
+                            selected = index == pagerState.currentPage,
+                            onClick = {
+                                scope.launch { pagerState.animateScrollToPage(index) }
+                            },
                             text = {
                                 Text(
                                     text = info.name,
@@ -217,46 +272,116 @@ fun BoardScreen(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
             }
 
-            when (val ui = state) {
-                UiState.Loading -> LoadingView()
-                is UiState.Error -> ErrorView(ui.message, onRetry = viewModel::refresh)
-                is UiState.LoginRequired -> LoginRequiredView(
-                    siteName = ui.siteName,
-                    message = ui.message,
-                    onLogin = { onLoginClick(ui.communityId) },
-                    onRetry = viewModel::refresh
+            if (boards.isEmpty()) {
+                ErrorView("표시할 게시판이 없습니다.", onRetry = onBack)
+            } else if (showPager) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    beyondViewportPageCount = 1,
+                    key = { page -> boards[page].id }
+                ) { page ->
+                    val pageBoard = boards[page]
+                    BoardPage(
+                        boardId = pageBoard.id,
+                        repository = repository,
+                        readHistoryStore = readHistoryStore,
+                        boardPrefsStore = boardPrefsStore,
+                        fontSizeSp = settings.baseFontSizeSp,
+                        refreshNonce = if (page == pagerState.settledPage) refreshNonce else 0,
+                        onPostClick = onPostClick,
+                        onLoginClick = onLoginClick
+                    )
+                }
+            } else {
+                BoardPage(
+                    boardId = boards.first().id,
+                    repository = repository,
+                    readHistoryStore = readHistoryStore,
+                    boardPrefsStore = boardPrefsStore,
+                    fontSizeSp = settings.baseFontSizeSp,
+                    refreshNonce = refreshNonce,
+                    onPostClick = onPostClick,
+                    onLoginClick = onLoginClick
                 )
-                is UiState.Success -> {
-                    val visiblePosts = if (hideRead) {
-                        ui.data.posts.filterNot { readIds.contains(it.id) }
-                    } else {
-                        ui.data.posts
-                    }
-                    val isThumbGrid = board?.listStyle == BoardListStyle.THUMBNAIL_GRID
+            }
+        }
+    }
+}
 
-                    PullToRefreshBox(
-                        isRefreshing = false,
-                        onRefresh = viewModel::refresh,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        if (isThumbGrid) {
-                            ThumbnailGrid(
-                                posts = visiblePosts,
-                                readIds = readIds,
-                                hasMore = ui.data.hasMore,
-                                onLoadMore = viewModel::loadMore,
-                                onPostClick = onPostClick
-                            )
-                        } else {
-                            PostList(
-                                posts = visiblePosts,
-                                readIds = readIds,
-                                fontSizeSp = settings.baseFontSizeSp,
-                                hasMore = ui.data.hasMore,
-                                onLoadMore = viewModel::loadMore,
-                                onPostClick = onPostClick
-                            )
-                        }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BoardPage(
+    boardId: String,
+    repository: BoardRepository,
+    readHistoryStore: ReadHistoryStore,
+    boardPrefsStore: BoardPrefsStore,
+    fontSizeSp: Float,
+    refreshNonce: Int,
+    onPostClick: (PostSummary) -> Unit,
+    onLoginClick: (communityId: String) -> Unit
+) {
+    val activity = LocalContext.current as ComponentActivity
+    val vm: BoardViewModel = viewModel(
+        viewModelStoreOwner = activity,
+        key = "board-$boardId",
+        factory = BoardViewModel.factory(boardId, repository, readHistoryStore)
+    )
+    val state by vm.state.collectAsStateWithLifecycle()
+    val readIds by vm.readIds.collectAsStateWithLifecycle()
+    val hideRead by boardPrefsStore.hideReadFor(boardId)
+        .collectAsStateWithLifecycle(initialValue = false)
+    val board = CommunityCatalog.findBoard(boardId)
+    val axisLock = remember { AxisLockNestedScrollConnection() }
+
+    LaunchedEffect(refreshNonce) {
+        if (refreshNonce != 0) vm.refresh()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(axisLock)
+    ) {
+        when (val ui = state) {
+            UiState.Loading -> LoadingView()
+            is UiState.Error -> ErrorView(ui.message, onRetry = vm::refresh)
+            is UiState.LoginRequired -> LoginRequiredView(
+                siteName = ui.siteName,
+                message = ui.message,
+                onLogin = { onLoginClick(ui.communityId) },
+                onRetry = vm::refresh
+            )
+            is UiState.Success -> {
+                val visiblePosts = if (hideRead) {
+                    ui.data.posts.filterNot { readIds.contains(it.id) }
+                } else {
+                    ui.data.posts
+                }
+                val isThumbGrid = board?.listStyle == BoardListStyle.THUMBNAIL_GRID
+
+                PullToRefreshBox(
+                    isRefreshing = false,
+                    onRefresh = vm::refresh,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    if (isThumbGrid) {
+                        ThumbnailGrid(
+                            posts = visiblePosts,
+                            readIds = readIds,
+                            hasMore = ui.data.hasMore,
+                            onLoadMore = vm::loadMore,
+                            onPostClick = onPostClick
+                        )
+                    } else {
+                        PostList(
+                            posts = visiblePosts,
+                            readIds = readIds,
+                            fontSizeSp = fontSizeSp,
+                            hasMore = ui.data.hasMore,
+                            onLoadMore = vm::loadMore,
+                            onPostClick = onPostClick
+                        )
                     }
                 }
             }
@@ -522,3 +647,4 @@ private fun MetaText(text: String, color: Color, fontSize: TextUnit) {
         softWrap = false
     )
 }
+

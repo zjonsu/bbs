@@ -1,0 +1,44 @@
+---
+description: 상세 본문 세로/가로 스와이프 확정안 — 함부로 원복·재설계 금지
+globs: app/src/main/java/com/bbs/reader/ui/detail/**/*.kt,app/src/main/java/com/bbs/reader/ui/components/CommonUi.kt
+alwaysApply: false
+---
+
+# 상세 스와이프 제스처 (확정 · 2026-10-21)
+
+사용자 확인으로 **현재 상태가 적합**하다. 관련 코드를 “개선” 명목으로 되돌리거나 다른 방식으로 바꾸지 말 것.
+변경이 필요하면 **사용자 명시 요청**이 있을 때만, 그리고 이 계약과의 diff를 설명할 것.
+
+## 확정 계약
+
+### DetailScreen (`DetailScreen.kt`)
+
+- `HorizontalPager`에 **`userScrollEnabled = false`**
+  - Pager가 WebView 세로 스크롤과 경쟁하지 않음
+- **EdgeSwipeZone / 가장자리 오버레이 금지**
+  - 가장자리 투명 레이어는 세로 스크롤을 가로챔
+- 글 전환은 WebView 콜백 → `animateScrollToPage` 만 사용
+- 가로 스와이프 수신은 **`page == pagerState.currentPage`** 인 페이지만
+
+### HtmlContent (`CommonUi.kt`)
+
+- `isNestedScrollingEnabled = false`
+- `onHorizontalSwipe` + `attachHorizontalSwipeDetector` 로만 가로 판정
+- **조기 축 잠금 금지** — DOWN~MOVE에서 vertical/horizontal 확정하지 말 것
+- 판정은 **UP 최종 변위** 또는 **GestureDetector.onFling**
+  - 가로 우세: `|dx| > |dy| * 1.5`
+  - 최소 거리: `max(width * 0.12, 56f)`
+  - 플링: `|velocityX| > |velocityY| * 1.5` 이고 `|velocityX| > 600`
+- 동일 HTML이면 `loadDataWithBaseURL` **재호출 금지** (터치 CANCEL 유발)
+
+## 하지 말 것
+
+- Pager `userScrollEnabled = true` 로 되돌려 WebView와 제스처 공유
+- EdgeSwipeZone / 화면 위 가로 전용 오버레이 재도입
+- nested scroll 축 잠금으로 상세 가로를 “대체”하려는 리팩터
+- 임계값을 크게 올려 가로가 다시 안 되게 만드는 튜닝 (사용자 요청 없이)
+
+## 관련 맥락
+
+- 게시판 목록 좌우 스와이프(`BoardScreen` + `AxisLockNestedScrollConnection`)는 **별개**
+- 읽음 표기는 settled/실제 열람 시에만 (`markAsRead`) — 프리로드와 분리

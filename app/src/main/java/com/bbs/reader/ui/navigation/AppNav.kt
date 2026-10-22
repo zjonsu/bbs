@@ -1,7 +1,6 @@
 package com.bbs.reader.ui.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -16,7 +15,6 @@ import com.bbs.reader.BbsApp
 import com.bbs.reader.data.repository.CommunityCatalog
 import com.bbs.reader.ui.auth.SiteLoginScreen
 import com.bbs.reader.ui.board.BoardScreen
-import com.bbs.reader.ui.board.BoardViewModel
 import com.bbs.reader.ui.detail.DetailScreen
 import com.bbs.reader.ui.home.HomeScreen
 import com.bbs.reader.ui.settings.BoardManageScreen
@@ -119,30 +117,27 @@ fun AppNav() {
             arguments = listOf(navArgument("boardId") { type = NavType.StringType })
         ) { entry ->
             val boardId = entry.arguments?.getString("boardId") ?: CommunityCatalog.DDANZI_HOT
-            val vm: BoardViewModel = viewModel(
-                key = boardId,
-                factory = BoardViewModel.factory(boardId, repository, readHistory)
-            )
             val loginOk by entry.savedStateHandle
                 .getStateFlow("site_login_ok", false)
                 .collectAsStateWithLifecycle()
-            LaunchedEffect(loginOk) {
-                if (loginOk) {
-                    entry.savedStateHandle["site_login_ok"] = false
-                    vm.refresh()
-                }
-            }
             BoardScreen(
-                viewModel = vm,
                 boardId = boardId,
+                repository = repository,
+                readHistoryStore = readHistory,
                 settingsStore = settingsStore,
                 boardPrefsStore = boardPrefsStore,
                 homePrefsStore = homePrefsStore,
+                loginRefreshToken = if (loginOk) 1 else 0,
+                onLoginRefreshConsumed = {
+                    entry.savedStateHandle["site_login_ok"] = false
+                },
                 onBack = { navController.popBackStack() },
                 onBoardChange = { newBoardId ->
-                    navController.navigate(Routes.board(newBoardId)) {
-                        popUpTo(Routes.board(boardId)) { inclusive = true }
-                        launchSingleTop = true
+                    if (newBoardId != boardId) {
+                        navController.navigate(Routes.board(newBoardId)) {
+                            popUpTo(Routes.board(boardId)) { inclusive = true }
+                            launchSingleTop = true
+                        }
                     }
                 },
                 onPostClick = { post ->
