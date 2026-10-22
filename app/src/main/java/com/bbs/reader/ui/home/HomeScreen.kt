@@ -2,7 +2,6 @@ package com.bbs.reader.ui.home
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -95,6 +94,17 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(
+                        onClick = onBoardManageClick,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Tune,
+                            contentDescription = "게시판 설정",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                    IconButton(
                         onClick = onSettingsClick,
                         modifier = Modifier.size(40.dp)
                     ) {
@@ -108,70 +118,51 @@ fun HomeScreen(
             }
         }
     ) { padding ->
-        Box(
+        LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp)
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = 8.dp, bottom = 72.dp)
-            ) {
-                if (communities.isEmpty()) {
-                    item {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 40.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "표시할 게시판이 없습니다",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            )
-                            Text(
-                                text = "하단 아이콘에서 게시판을 활성화해 주세요",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                modifier = Modifier.padding(top = 6.dp)
-                            )
-                        }
-                    }
-                } else {
-                    items(communities, key = { it.id }) { community ->
-                        ReorderableItem(reorderableState, key = community.id) {
-                            CommunityRow(
-                                community = community,
-                                modifier = Modifier.longPressDraggableHandle(
-                                    onDragStarted = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    }
-                                ),
-                                onClick = { onCommunityClick(community) }
-                            )
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                            )
-                        }
+            if (communities.isEmpty()) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 40.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "표시할 게시판이 없습니다",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            text = "상단 아이콘에서 게시판을 활성화해 주세요",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
                     }
                 }
-            }
-
-            IconButton(
-                onClick = onBoardManageClick,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 12.dp)
-                    .size(48.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Tune,
-                    contentDescription = "게시판 설정",
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                    modifier = Modifier.size(26.dp)
-                )
+            } else {
+                items(communities, key = { it.id }) { community ->
+                    ReorderableItem(reorderableState, key = community.id) {
+                        CommunityRow(
+                            community = community,
+                            modifier = Modifier.longPressDraggableHandle(
+                                onDragStarted = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                }
+                            ),
+                            onClick = { onCommunityClick(community) }
+                        )
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                        )
+                    }
+                }
             }
         }
     }

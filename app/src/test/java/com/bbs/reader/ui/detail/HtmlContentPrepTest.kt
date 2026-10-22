@@ -6,29 +6,31 @@ import org.junit.Test
 
 class HtmlContentPrepTest {
     @Test
-    fun darkTheme_removesBlackTextColor() {
-        val html = """<p style="color:#000000">검은글씨</p><span style="color:black">x</span>"""
+    fun stripsAllInlineTextColors() {
+        val html = """
+            <p style="color:#000000">검은글씨</p>
+            <span style="color:white">흰글씨</span>
+            <font color="#C62828">강조</font>
+            <div style="color:#ccc; background:#fff; padding:8px">박스</div>
+        """.trimIndent()
         val result = prepareContentHtml(html, darkTheme = true)
-        assertFalse(result.contains("color:#000000", ignoreCase = true))
-        assertFalse(result.contains("color:black", ignoreCase = true))
+        assertFalse(result.contains("color:", ignoreCase = true))
+        assertFalse(result.contains("background", ignoreCase = true))
+        assertFalse(result.contains("color=", ignoreCase = true))
         assertTrue(result.contains("검은글씨"))
-    }
-
-    @Test
-    fun lightTheme_removesWhiteTextColor() {
-        val html = """<p style="color:#ffffff">흰글씨</p>"""
-        val result = prepareContentHtml(html, darkTheme = false)
-        assertFalse(result.contains("color:#ffffff", ignoreCase = true))
         assertTrue(result.contains("흰글씨"))
+        assertTrue(result.contains("강조"))
+        assertTrue(result.contains("박스"))
+        assertTrue(result.contains("padding:8px") || result.contains("padding: 8px"))
     }
 
     @Test
-    fun keepsReadableAccentColor() {
-        val html = """<p style="color:#C62828">강조</p>"""
-        val dark = prepareContentHtml(html, darkTheme = true)
-        val light = prepareContentHtml(html, darkTheme = false)
-        assertTrue(dark.contains("#C62828", ignoreCase = true))
-        assertTrue(light.contains("#C62828", ignoreCase = true))
+    fun stripsBgcolorAttribute() {
+        val html = """<td bgcolor="#ffffff" style="color:#eee">내용</td>"""
+        val result = prepareContentHtml(html, darkTheme = true)
+        assertFalse(result.contains("bgcolor", ignoreCase = true))
+        assertFalse(result.contains("color:", ignoreCase = true))
+        assertTrue(result.contains("내용"))
     }
 
     @Test

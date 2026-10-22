@@ -8,7 +8,7 @@ import java.util.regex.Pattern
 
 /**
  * 상세 본문 HTML을 테마에 맞게 정리한다.
- * - 배경과 대비가 낮은 글자색을 제거해 기본 본문색이 적용되도록 함
+ * - 인라인 글자색·배경색을 제거해 리더 기본색이 적용되도록 함
  * - 연속 줄바꿈·빈 단락을 줄여 과도한 세로 여백 제거
  * - http(s) URL을 클릭 가능한 링크로 변환
  * - URL 전용 링크는 가져온 페이지 제목으로 표시 (링크색·밑줄)
@@ -17,7 +17,7 @@ import java.util.regex.Pattern
  */
 internal fun prepareContentHtml(
     html: String,
-    darkTheme: Boolean,
+    @Suppress("UNUSED_PARAMETER") darkTheme: Boolean,
     baseUrl: String? = null,
     linkTitles: Map<String, String> = emptyMap()
 ): String {
@@ -30,7 +30,7 @@ internal fun prepareContentHtml(
     val body = doc.body()
 
     sanitizeScripts(body)
-    adjustColors(body, darkTheme)
+    stripHtmlColors(body)
     collapseExcessiveBreaks(body)
     prepareLinks(body, linkTitles)
     prepareMedia(body)
@@ -359,125 +359,41 @@ private fun replaceAnchorWithVimeo(a: Element, videoId: String) {
     a.replaceWith(wrap)
 }
 
-private fun adjustColors(root: Element, darkTheme: Boolean) {
-    for (el in root.select("[style],[color]")) {
-        val colorAttr = el.attr("color").takeIf { it.isNotBlank() }
-        if (colorAttr != null) {
-            val parsed = parseCssColor(colorAttr)
-            if (parsed != null && !isReadable(parsed, darkTheme)) {
-                el.removeAttr("color")
-            }
-        }
+/** 원문 HTML의 글자색·배경색을 제거해 리더 테마색만 쓰이게 한다. */
+private fun stripHtmlColors(root: Element) {
+    for (el in root.select("[style],[color],[bgcolor]")) {
+        if (el.hasAttr("color")) el.removeAttr("color")
+        if (el.hasAttr("bgcolor")) el.removeAttr("bgcolor")
 
         val style = el.attr("style")
         if (style.isBlank()) continue
-        val updated = rewriteStyleColors(style, darkTheme)
+        val updated = stripColorStyleProps(style)
         if (updated != style) {
             if (updated.isBlank()) el.removeAttr("style") else el.attr("style", updated)
         }
     }
 }
 
-private val colorPropPattern: Pattern =
-    Pattern.compile("""(?i)(?:^|;)\s*color\s*:\s*([^;]+)""")
-
-private fun rewriteStyleColors(style: String, darkTheme: Boolean): String {
-    val matcher = colorPropPattern.matcher(style)
-    val sb = StringBuilder()
-    var last = 0
-    var changed = false
-    while (matcher.find()) {
-        val value = matcher.group(1)?.trim().orEmpty()
-        val parsed = parseCssColor(value)
-        if (parsed != null && !isReadable(parsed, darkTheme)) {
-            // 매치 시작이 ';' 이면 ';'는 유지하고 color 선언만 제거
-            val removeFrom = if (style[matcher.start()] == ';') matcher.start() + 1 else matcher.start()
-            sb.append(style, last, removeFrom)
-            last = matcher.end()
-            changed = true
-        }
-    }
-    if (!changed) return style
-    sb.append(style, last, style.length)
-    return sb.toString()
-        .replace(Regex(""";\s*;+"""), ";")
-        .trim()
-        .trim(';')
-        .trim()
-}
-
-private data class Rgb(val r: Int, val g: Int, val b: Int)
-
-private fun isReadable(rgb: Rgb, darkTheme: Boolean): Boolean {
-    val luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255.0
-    return if (darkTheme) {
-        // 다크 배경에서 거의 검정에 가까운 색만 제거 (강조색·빨강 등은 유지)
-        luminance >= 0.18
-    } else {
-        // 라이트 배경에서 거의 흰에 가까운 색만 제거
-        luminance <= 0.88
-    }
-}
-
-private fun parseCssColor(raw: String): Rgb? {
-    val value = raw.trim().lowercase()
-    if (value.isEmpty() || value == "inherit" || value == "currentcolor" || value == "transparent") {
-        return null
-    }
-    return when {
-        value.startsWith("#") -> parseHexColor(value)
-        value.startsWith("rgb") -> {
-            val nums = Regex("""[\d.]+""").findAll(value).map { it.value.toFloat() }.toList()
-            if (nums.size < 3) null
-            else Rgb(
-                nums[0].toInt().coerceIn(0, 255),
-                nums[1].toInt().coerceIn(0, 255),
-                nums[2].toInt().coerceIn(0, 255)
-            )
-        }
-        else -> namedColors[value]?.let { parseHexColor(it) }
-    }
-}
-
-private fun parseHexColor(value: String): Rgb? {
-    val hex = when (value.length) {
-        4 -> "#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}"
-        7 -> value
-        9 -> value.substring(0, 7) // ignore alpha
-        else -> return null
-    }
-    return try {
-        val n = hex.removePrefix("#").toInt(16)
-        Rgb((n shr 16) and 0xFF, (n shr 8) and 0xFF, n and 0xFF)
-    } catch (_: NumberFormatException) {
-        null
-    }
-}
-
-private val namedColors = mapOf(
-    "black" to "#000000",
-    "white" to "#FFFFFF",
-    "red" to "#FF0000",
-    "green" to "#008000",
-    "blue" to "#0000FF",
-    "gray" to "#808080",
-    "grey" to "#808080",
-    "darkgray" to "#A9A9A9",
-    "darkgrey" to "#A9A9A9",
-    "lightgray" to "#D3D3D3",
-    "lightgrey" to "#D3D3D3",
-    "silver" to "#C0C0C0",
-    "navy" to "#000080",
-    "maroon" to "#800000",
-    "purple" to "#800080",
-    "teal" to "#008080",
-    "olive" to "#808000",
-    "lime" to "#00FF00",
-    "aqua" to "#00FFFF",
-    "fuchsia" to "#FF00FF",
-    "yellow" to "#FFFF00",
-    "orange" to "#FFA500"
+private val colorStyleKeys = setOf(
+    "color",
+    "background",
+    "background-color",
+    "background-image",
+    "-webkit-text-fill-color",
+    "border-color",
+    "outline-color",
 )
+
+private fun stripColorStyleProps(style: String): String =
+    style
+        .split(';')
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .filterNot { decl ->
+            val key = decl.substringBefore(':').trim().lowercase()
+            key in colorStyleKeys
+        }
+        .joinToString("; ")
 
 private fun collapseExcessiveBreaks(root: Element) {
     for (p in root.select("p").toList()) {
